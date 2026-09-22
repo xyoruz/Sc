@@ -1,0 +1,275 @@
+#!/bin/bash
+# ============================================================
+# verify - Verifikasi instalasi script
+# Lokasi: /usr/local/sbin/verify
+# ============================================================
+
+BASE="/usr/local/sbin/xyr"
+source "$BASE/lib/config.sh"
+source "$BASE/lib/common.sh"
+
+clear
+print_line
+print_title "        VERIFIKASI INSTALASI XYR"
+print_line
+echo ""
+
+ERRORS=0
+WARNINGS=0
+
+check_ok()   { echo -e "  ${C_GREEN}[ OK ]${C_RESET} $1"; }
+check_fail() { echo -e "  ${C_RED}[FAIL]${C_RESET} $1"; ERRORS=$((ERRORS + 1)); }
+check_warn() { echo -e "  ${C_YELLOW}[WARN]${C_RESET} $1"; WARNINGS=$((WARNINGS + 1)); }
+
+# ---------- 1. OS ----------
+echo -e "${C_CYAN}== Sistem Operasi ==${C_RESET}"
+if [[ -f /etc/os-release ]]; then
+    # shellcheck source=/dev/null
+    source /etc/os-release
+    check_ok "OS: $PRETTY_NAME"
+    check_ok "Arsitektur: $(uname -m)"
+    check_ok "Virtualisasi: $(systemd-detect-virt 2>/dev/null || echo unknown)"
+else
+    check_fail "OS tidak terdeteksi"
+fi
+echo ""
+
+# ---------- 2. Library ----------
+echo -e "${C_CYAN}== Library Script ==${C_RESET}"
+for f in config.sh common.sh validate.sh xray-helper.sh; do
+    if [[ -f "$BASE/lib/$f" ]]; then
+        check_ok "lib/$f"
+    else
+        check_fail "lib/$f tidak ditemukan"
+    fi
+done
+echo ""
+
+# ---------- 3. Binari Utama ----------
+echo -e "${C_CYAN}== Binari Utama ==${C_RESET}"
+for bin in xray nginx ssh dropbear; do
+    if command -v "$bin" >/dev/null 2>&1; then
+        check_ok "$bin: $(command -v $bin)"
+    else
+        check_warn "$bin tidak terinstall"
+    fi
+done
+echo ""
+
+# ---------- 4. Service ----------
+echo -e "${C_CYAN}== Service ==${C_RESET}"
+for svc in xray nginx ssh dropbear cron fail2ban; do
+    if service_exists "$svc"; then
+        if is_service_active "$svc"; then
+            check_ok "$svc aktif"
+        else
+            check_fail "$svc tidak aktif"
+        fi
+    else
+        check_warn "$svc tidak terinstall"
+    fi
+done
+echo ""
+
+# ---------- 5. Service UDP ----------
+echo -e "${C_CYAN}== Service UDP ==${C_RESET}"
+UDP_FOUND=0
+for svc in badvpn-udpgw badvpn-udpgw2 badvpn-udpgw3 udp-custom; do
+    if service_exists "$svc"; then
+        UDP_FOUND=1
+        if is_service_active "$svc"; then
+            check_ok "$svc aktif"
+        else
+            check_warn "$svc tidak aktif"
+        fi
+    fi
+done
+
+if [[ $UDP_FOUND -eq 0 ]]; then
+    echo -e "  ${C_GRAY}[ -- ] UDP Custom belum diinstall${C_RESET}"
+else
+    # Cek port UDP listen
+    for port in 7100 7200 7300; do
+        if ss -ulnp 2>/dev/null | grep -q ":$port "; then
+            check_ok "UDP port $port listen"
+        else
+            check_warn "UDP port $port tidak listen"
+        fi
+    done
+fi
+echo ""
+
+# ---------- 6. Config Xray ----------
+echo -e "${C_CYAN}== Config Xray ==${C_RESET}"
+if [[ -f "$XRAY_CONF" ]]; then
+    check_ok "File config ada: $XRAY_CONF"
+    if jq . "$XRAY_CONF" > /dev/null 2>&1; then
+        check_ok "JSON valid"
+    else
+        check_fail "JSON tidak valid"
+    fi
+    if command -v xray >/dev/null 2>&1; then
+        if xray -test -config "$XRAY_CONF" > /dev/null 2>&1; then
+            check_ok "Xray config test OK"
+        else
+            check_fail "Xray config test gagal"
+        fi
+    fi
+    if grep -q '"email": "dummy"' "$XRAY_CONF"; then
+        check_ok "User dummy anchor ditemukan"
+    else
+        check_warn "User dummy tidak ditemukan"
+    fi
+else
+    check_fail "File $XRAY_CONF tidak ada"
+fi
+echo ""
+
+# ---------- 7. Config Nginx ----------
+echo -e "${C_CYAN}== Config Nginx ==${C_RESET}"
+if [[ -f /etc/nginx/nginx.conf ]]; then
+    if nginx -t >/dev/null 2>&1; then
+        check_ok "Nginx config valid"
+    else
+        check_fail "Nginx config error"
+        nginx -t 2>&1 | grep -E "error|emerg"
+    fi
+else
+    check_warn "nginx.conf tidak ditemukan"
+fi
+echo ""
+
+# ---------- 8. Config SSH ----------
+echo -e "${C_CYAN}== Config SSH ==${C_RESET}"
+if sshd -t 2>/dev/null; then
+    check_ok "sshd_config valid"
+else
+    check_fail "sshd_config error"
+fi
+echo ""
+
+# ---------- 9. Domain & SSL ----------
+echo -e "${C_CYAN}== Domain & SSL ==${C_RESET}"
+if [[ -f "$XRAY_DOMAIN" ]]; then
+    DOMAIN=$(cat "$XRAY_DOMAIN")
+    check_ok "Domain: $DOMAIN"
+else
+    check_warn "Domain belum di-set (gunakan addhost)"
+fi
+
+if [[ -f /etc/xray/xray.crt && -f /etc/xray/xray.key ]]; then
+    check_ok "SSL certificate ada"
+    EXPIRY=$(openssl x509 -enddate -noout -in /etc/xray/xray.crt 2>/dev/null | cut -d= -f2)
+    [[ -n "$EXPIRY" ]] && echo "         Expired: $EXPIRY"
+else
+    check_warn "SSL certificate belum ada"
+fi
+echo ""
+
+# ---------- 10. Folder Data ----------
+echo -e "${C_CYAN}== Folder Data ==${C_RESET}"
+for d in "$XYR_CONF" "$XYR_LOG" "$QUOTA_DIR" "$LIMITIP_DIR" "$USAGE_DIR" "$LOCKED_DIR" "$BASE/lib"; do
+    if [[ -d "$d" ]]; then
+        check_ok "$d"
+    else
+        check_fail "$d tidak ada"
+    fi
+done
+echo ""
+
+# ---------- 11. Cron ----------
+echo -e "${C_CYAN}== Cron ==${C_RESET}"
+for c in xyr-limitip xyr-limitquota xyr-xp xyr-health; do
+    if [[ -f "/etc/cron.d/$c" ]]; then
+        check_ok "cron: $c"
+    else
+        check_warn "cron $c tidak ada"
+    fi
+done
+echo ""
+
+# ---------- 12. Command Utama ----------
+echo -e "${C_CYAN}== Command Utama ==${C_RESET}"
+CMDS=(
+    menu addssh addws addvless addtr addss
+    delssh delws delvless deltr delss
+    renewssh renewws renewvless renewtr renewss
+    cekssh cekws cekvless cektr cekss
+    xp healthcheck verify addhost
+    limit-ip limit-quota lock-user unlock-user cek-lock
+    install-udp install-udp-custom uninstall-udp
+    m-ssh m-vmess m-vless m-trojan m-ss
+    m-trial m-utility m-limit
+)
+MISSING=0
+for cmd in "${CMDS[@]}"; do
+    if ! command -v "$cmd" >/dev/null 2>&1; then
+        check_fail "$cmd tidak terinstall"
+        MISSING=$((MISSING + 1))
+    fi
+done
+if [[ $MISSING -eq 0 ]]; then
+    check_ok "Semua command tersedia (${#CMDS[@]} command)"
+fi
+echo ""
+
+# ---------- 13. Port Listen ----------
+echo -e "${C_CYAN}== Port Listen ==${C_RESET}"
+check_port() {
+    local port="$1" label="$2"
+    if ss -tlnp 2>/dev/null | grep -q ":$port "; then
+        check_ok "TCP $port ($label)"
+    else
+        check_warn "TCP $port ($label) tidak listen"
+    fi
+}
+check_udp() {
+    local port="$1" label="$2"
+    if ss -ulnp 2>/dev/null | grep -q ":$port "; then
+        check_ok "UDP $port ($label)"
+    else
+        check_warn "UDP $port ($label) tidak listen"
+    fi
+}
+
+check_port 22 "SSH"
+check_port 80 "Nginx HTTP"
+check_port 81 "Nginx Web"
+check_port 443 "Nginx HTTPS"
+check_port 109 "Dropbear"
+check_port 143 "Dropbear"
+check_port 10000 "Xray API"
+for p in 10001 10002 10003 10004 10005 10006 10007 10008; do
+    if ss -tlnp 2>/dev/null | grep -q "127.0.0.1:$p "; then
+        check_ok "Xray $p (internal)"
+    fi
+done
+
+if [[ $UDP_FOUND -eq 1 ]]; then
+    check_udp 7100 "BadVPN UDP 1"
+    check_udp 7200 "BadVPN UDP 2"
+    check_udp 7300 "BadVPN UDP 3"
+fi
+echo ""
+
+# ---------- 14. Koneksi Internet ----------
+echo -e "${C_CYAN}== Koneksi Internet ==${C_RESET}"
+if curl -sS --max-time 5 https://1.1.1.1 >/dev/null 2>&1; then
+    check_ok "Internet OK"
+else
+    check_warn "Internet lambat / tidak ada"
+fi
+echo ""
+
+# ---------- Ringkasan ----------
+print_line
+if [[ $ERRORS -eq 0 && $WARNINGS -eq 0 ]]; then
+    print_ok "SEMUA KOMPONEN OK"
+elif [[ $ERRORS -eq 0 ]]; then
+    print_warn "$WARNINGS warning, tidak ada error kritis"
+else
+    print_error "$ERRORS error, $WARNINGS warning"
+fi
+print_line
+
+back_to_menu
