@@ -1,0 +1,144 @@
+#!/bin/bash
+# ============================================================
+# addtr - Create Trojan Account (WS + gRPC)
+# Lokasi: /usr/local/sbin/addtr
+# ============================================================
+
+BASE="/usr/local/sbin/xyr"
+source "$BASE/lib/config.sh"
+source "$BASE/lib/common.sh"
+source "$BASE/lib/validate.sh"
+source "$BASE/lib/xray-helper.sh"
+
+require_root
+acquire_lock "$LOCKFILE_ADD"
+
+print_header "CREATE TROJAN ACCOUNT"
+
+domain=$(get_domain)
+[[ -z "$domain" ]] && { print_error "Domain belum di-set"; release_lock; back_to_menu; exit 1; }
+
+IP=$(get_my_ip)
+ISP=$(cat /root/.info/.isp 2>/dev/null || echo "-")
+CITY=$(cat /root/.info/.city 2>/dev/null || echo "-")
+
+# ---------- Input ----------
+while :; do
+    ask_username USER "Username"
+    if grep -qw "$USER" "$XRAY_CONF" 2>/dev/null; then
+        print_error "Username '$USER' sudah ada di config Xray"
+        continue
+    fi
+    break
+done
+
+ask_number DAYS "Expired (hari)" 1 3650 30
+ask_number QUOTA_GB "Limit Quota GB (0=unlimited)" 0 9999 0
+ask_number IPLIMIT "Limit IP (0=unlimited)" 0 99 2
+
+uuid=$(cat /proc/sys/kernel/random/uuid)
+exp_date=$(date -d "$DAYS days" +"%Y-%m-%d")
+exp_display=$(date -d "$DAYS days" +"%d %b, %Y")
+
+# ---------- Sisip ke config.json ----------
+xray_backup_config
+
+sed -i "/#trojanws\$/a\\#! ${USER} ${exp_date}\\
+},{\"password\": \"${uuid}\",\"email\": \"${USER}\"" "$XRAY_CONF"
+sed -i "/#trojangrpc\$/a\\#! ${USER} ${exp_date}\\
+},{\"password\": \"${uuid}\",\"email\": \"${USER}\"" "$XRAY_CONF"
+
+if ! xray_apply; then
+    print_error "Config Xray corrupt, rollback!"
+    release_lock
+    back_to_menu
+    exit 1
+fi
+
+# ---------- Generate links ----------
+LINK_WS="trojan://${uuid}@${domain}:443?path=%2Ftrojan-ws&security=tls&host=${domain}&type=ws&sni=${domain}#${USER}"
+LINK_GRPC="trojan://${uuid}@${domain}:443?mode=gun&security=tls&type=grpc&serviceName=trojan-grpc&sni=${domain}#${USER}"
+
+# ---------- DB ----------
+db_save_user "$DB_TROJAN" "$PREFIX_TROJAN" "$USER" "$exp_date" "$uuid" "$QUOTA_GB" "$IPLIMIT"
+
+# ---------- Limit ----------
+[[ "$IPLIMIT" -gt 0 ]] && echo "$IPLIMIT" > "$LIMITIP_DIR/trojan/$USER"
+[[ "$QUOTA_GB" -gt 0 ]] && echo "$((QUOTA_GB * 1024 * 1024 * 1024))" > "$QUOTA_DIR/trojan/$USER"
+
+# ---------- File web ----------
+cat > "${NGINX_WEB}/trojan-${USER}.txt" <<-END
+=================================
+Format Trojan Account
+=================================
+Username         : $USER
+Host             : $domain
+Port TLS         : 443
+Password         : $uuid
+Network          : ws / grpc
+Path             : /trojan-ws
+ServiceName      : trojan-grpc
+=================================
+Link WS    : $LINK_WS
+Link gRPC  : $LINK_GRPC
+=================================
+Limit IP       : $IPLIMIT
+Limit Quota    : $QUOTA_GB GB
+Aktif Selama   : $DAYS Hari
+Berakhir Pada  : $exp_display
+=================================
+
+# Clash Config
+- name: Trojan-$USER-WS
+  server: ${domain}
+  port: 443
+  type: trojan
+  password: ${uuid}
+  network: ws
+  sni: ${domain}
+  skip-cert-verify: true
+  udp: true
+  ws-opts:
+    path: /trojan-ws
+    headers:
+        Host: ${domain}
+
+- name: Trojan-$USER-gRPC
+  type: trojan
+  server: ${domain}
+  port: 443
+  password: ${uuid}
+  udp: true
+  sni: ${domain}
+  skip-cert-verify: true
+  network: grpc
+  grpc-opts:
+    grpc-service-name: trojan-grpc
+=================================
+END
+chmod 644 "${NGINX_WEB}/trojan-${USER}.txt"
+
+log_info "Trojan created: $USER | exp: $exp_date"
+
+# ---------- Output ----------
+clear
+print_line
+print_title "       TROJAN ACCOUNT BERHASIL DIBUAT"
+print_line
+echo "Username    : $USER"
+echo "Domain      : $domain"
+echo "Password    : $uuid"
+echo "Limit IP    : $IPLIMIT"
+echo "Limit Quota : $QUOTA_GB GB"
+print_line
+echo "Link WS     : $LINK_WS"
+print_line
+echo "Link gRPC   : $LINK_GRPC"
+print_line
+echo "OpenClash   : http://$domain:81/trojan-${USER}.txt"
+print_line
+echo "Aktif       : $DAYS Hari | Berakhir: $exp_display"
+print_line
+
+release_lock
+back_to_menu

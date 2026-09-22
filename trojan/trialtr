@@ -1,0 +1,63 @@
+#!/bin/bash
+# ============================================================
+# trialtr - Create Trial Trojan (durasi menit)
+# Lokasi: /usr/local/sbin/trialtr
+# ============================================================
+
+BASE="/usr/local/sbin/xyr"
+source "$BASE/lib/config.sh"
+source "$BASE/lib/common.sh"
+source "$BASE/lib/validate.sh"
+source "$BASE/lib/xray-helper.sh"
+
+require_root
+
+print_header "TRIAL TROJAN ACCOUNT"
+
+domain=$(get_domain)
+[[ -z "$domain" ]] && { print_error "Domain belum di-set"; back_to_menu; exit 1; }
+
+ask_number MINUTES "Durasi trial (menit)" 1 1440 60
+
+USER="trial$(tr -dc 0-9 </dev/urandom | head -c5)"
+uuid=$(cat /proc/sys/kernel/random/uuid)
+exp_date=$(date -d "+1 day" +"%Y-%m-%d")
+
+xray_backup_config
+sed -i "/#trojanws\$/a\\#! ${USER} ${exp_date}\\
+},{\"password\": \"${uuid}\",\"email\": \"${USER}\"" "$XRAY_CONF"
+sed -i "/#trojangrpc\$/a\\#! ${USER} ${exp_date}\\
+},{\"password\": \"${uuid}\",\"email\": \"${USER}\"" "$XRAY_CONF"
+
+if ! xray_apply; then
+    print_error "Gagal create trial"
+    back_to_menu; exit 1
+fi
+
+db_save_user "$DB_TROJAN" "$PREFIX_TROJAN" "$USER" "$exp_date" "$uuid" 0 1
+
+if command -v at >/dev/null 2>&1; then
+    echo "/usr/local/sbin/del-auto trojan ${USER}" | at now +"$MINUTES" minutes 2>/dev/null || true
+fi
+
+LINK_WS="trojan://${uuid}@${domain}:443?path=%2Ftrojan-ws&security=tls&host=${domain}&type=ws&sni=${domain}#${USER}"
+LINK_GRPC="trojan://${uuid}@${domain}:443?mode=gun&security=tls&type=grpc&serviceName=trojan-grpc&sni=${domain}#${USER}"
+
+log_info "Trial Trojan: $USER (${MINUTES}m)"
+
+clear
+print_line
+print_title "        TRIAL TROJAN DIBUAT"
+print_line
+echo "Username  : $USER"
+echo "Password  : $uuid"
+echo "Durasi    : $MINUTES menit"
+print_line
+echo "Link WS   : $LINK_WS"
+print_line
+echo "Link gRPC : $LINK_GRPC"
+print_line
+print_warn "Akun dihapus otomatis dalam $MINUTES menit"
+print_line
+
+back_to_menu

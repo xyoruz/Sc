@@ -1,0 +1,56 @@
+#!/bin/bash
+# ============================================================
+# deltr - Delete Trojan Account
+# Lokasi: /usr/local/sbin/deltr
+# ============================================================
+
+BASE="/usr/local/sbin/xyr"
+source "$BASE/lib/config.sh"
+source "$BASE/lib/common.sh"
+source "$BASE/lib/xray-helper.sh"
+
+require_root
+acquire_lock "$LOCKFILE_DEL"
+
+print_header "DELETE TROJAN ACCOUNT"
+
+if [[ -f "$DB_TROJAN" ]]; then
+    printf "%-20s %s\n" "USERNAME" "EXPIRED"
+    print_line
+    awk -v p="$PREFIX_TROJAN" '$1==p {printf "%-20s %s\n", $2, $3}' "$DB_TROJAN"
+    print_line
+else
+    print_warn "DB Trojan kosong"
+    release_lock; back_to_menu; exit 0
+fi
+echo ""
+
+while :; do
+    read -rp "Username yang akan dihapus: " USER
+    [[ -z "$USER" ]] && { print_warn "Dibatalkan"; release_lock; back_to_menu; exit 0; }
+    if ! grep -qw "$USER" "$XRAY_CONF" 2>/dev/null; then
+        print_error "User tidak ditemukan"; continue
+    fi
+    break
+done
+
+xray_backup_config
+xray_del_user "$PREFIX_TROJAN" "$USER"
+
+if ! xray_apply; then
+    print_error "Gagal hapus. Rollback."
+    release_lock; back_to_menu; exit 1
+fi
+
+db_del_user "$DB_TROJAN" "$PREFIX_TROJAN" "$USER"
+rm -f "${QUOTA_DIR}/trojan/${USER}"
+rm -f "${LIMITIP_DIR}/trojan/${USER}"
+rm -f "${USAGE_DIR}/trojan/${USER}"
+rm -f "${LOCKED_DIR}/trojan/${USER}"
+rm -f "${NGINX_WEB}/trojan-${USER}.txt"
+
+log_info "Trojan deleted: $USER"
+
+print_ok "User $USER berhasil dihapus"
+release_lock
+back_to_menu

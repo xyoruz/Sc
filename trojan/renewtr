@@ -1,0 +1,70 @@
+#!/bin/bash
+# ============================================================
+# renewtr - Renew Trojan Account
+# Lokasi: /usr/local/sbin/renewtr
+# ============================================================
+
+BASE="/usr/local/sbin/xyr"
+source "$BASE/lib/config.sh"
+source "$BASE/lib/common.sh"
+source "$BASE/lib/validate.sh"
+source "$BASE/lib/xray-helper.sh"
+
+require_root
+
+print_header "RENEW TROJAN ACCOUNT"
+
+if [[ -f "$DB_TROJAN" ]]; then
+    printf "%-20s %s\n" "USERNAME" "EXPIRED"
+    print_line
+    awk -v p="$PREFIX_TROJAN" '$1==p {printf "%-20s %s\n", $2, $3}' "$DB_TROJAN"
+    print_line
+fi
+echo ""
+
+while :; do
+    read -rp "Username: " USER
+    if ! grep -qw "$USER" "$XRAY_CONF" 2>/dev/null; then
+        print_error "User tidak ditemukan"; continue
+    fi
+    break
+done
+
+ask_number DAYS "Tambah berapa hari" 1 3650 30
+
+old_exp=$(grep -m1 "^${PREFIX_TROJAN} ${USER} " "$XRAY_CONF" | cut -d ' ' -f 3)
+old_exp_ts=$(date -d "$old_exp" +%s 2>/dev/null || echo 0)
+now_ts=$(date +%s)
+
+if [[ "$old_exp_ts" -le "$now_ts" ]]; then
+    base_ts=$now_ts
+else
+    base_ts=$old_exp_ts
+fi
+
+new_exp_ts=$((base_ts + DAYS * 86400))
+new_exp_date=$(date -d "@$new_exp_ts" +"%Y-%m-%d")
+new_exp_display=$(date -d "@$new_exp_ts" +"%d %b, %Y")
+
+xray_backup_config
+
+sed -i "s|^${PREFIX_TROJAN} ${USER} [0-9-]*|${PREFIX_TROJAN} ${USER} ${new_exp_date}|" "$XRAY_CONF"
+
+if ! xray_apply; then
+    print_error "Gagal update. Rollback."
+    back_to_menu; exit 1
+fi
+
+if [[ -f "$DB_TROJAN" ]]; then
+    old_line=$(grep -E "^${PREFIX_TROJAN} ${USER} " "$DB_TROJAN")
+    uuid=$(echo "$old_line" | awk '{print $4}')
+    quota=$(echo "$old_line" | awk '{print $5}')
+    ipl=$(echo "$old_line" | awk '{print $6}')
+    sed -i "/^${PREFIX_TROJAN} ${USER} /d" "$DB_TROJAN"
+    echo "${PREFIX_TROJAN} ${USER} ${new_exp_date} ${uuid} ${quota} ${ipl}" >> "$DB_TROJAN"
+fi
+
+log_info "Trojan renewed: $USER -> $new_exp_date"
+
+print_ok "User $USER diperpanjang sampai $new_exp_display"
+back_to_menu
