@@ -1,0 +1,41 @@
+#!/bin/bash
+# ============================================================
+# uninstall-udp - Uninstall UDP Custom
+# Lokasi: /usr/local/sbin/uninstall-udp
+# ============================================================
+
+BASE="/usr/local/sbin/xyr"
+source "$BASE/lib/config.sh"
+source "$BASE/lib/common.sh"
+
+require_root
+
+print_header "UNINSTALL UDP CUSTOM"
+
+read -rp "Yakin hapus semua UDP Custom? (y/N): " ans
+[[ "${ans,,}" != "y" ]] && { print_warn "Dibatalkan"; back_to_menu; exit 0; }
+
+# ---------- Stop & disable service ----------
+for svc in badvpn-udpgw badvpn-udpgw2 badvpn-udpgw3 udp-custom; do
+    if systemctl list-unit-files | grep -q "^${svc}.service"; then
+        systemctl stop "$svc" 2>/dev/null
+        systemctl disable "$svc" 2>/dev/null
+        rm -f "/etc/systemd/system/${svc}.service"
+        print_ok "Removed: $svc"
+    fi
+done
+
+# ---------- Hapus binary ----------
+rm -f /usr/local/bin/badvpn-udpgw
+rm -f /usr/local/bin/udp-custom
+
+# ---------- Hapus config ----------
+rm -rf /etc/udp-custom
+
+# ---------- Reload systemd ----------
+systemctl daemon-reload
+
+log_info "UDP Custom uninstalled"
+
+print_ok "UDP Custom berhasil dihapus"
+back_to_menu
