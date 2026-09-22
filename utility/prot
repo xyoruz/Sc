@@ -14,13 +14,16 @@ print_title "           PORT & SERVICE INFO"
 print_line
 cat <<EOF
    ${C_CYAN}SSH / OpenVPN${C_RESET}
-     - OpenSSH        : 22, 80, 443
-     - Dropbear       : 109, 143, 443
-     - SSH WS         : 80, 8080, 8880, 2082
-     - SSH WSS        : 443, 8443, 2053, 2083
+     - OpenSSH        : 22
+     - Dropbear       : 109, 143
      - OVPN TCP       : 1194
      - OVPN UDP       : 2200
-     - BadVPN UDP     : 7100, 7200, 7300
+
+   ${C_CYAN}UDP Custom${C_RESET}
+     - BadVPN UDP 1   : 7100
+     - BadVPN UDP 2   : 7200
+     - BadVPN UDP 3   : 7300
+     - UDP Custom     : 1-65535 (exclude port aktif)
 
    ${C_CYAN}Xray${C_RESET}
      - Vmess WS TLS   : 443
@@ -37,8 +40,10 @@ cat <<EOF
      - HTTP           : 80, 81
      - HTTPS          : 443
 
-   ${C_CYAN}HAProxy${C_RESET}
-     - 80, 443
+   ${C_CYAN}HAProxy${C_RESET} (opsional)
+     - SSH SSL        : 8443
+     - Xray TLS       : 2053
+     - Xray NTLS      : 2082, 8080
 EOF
 print_line
 back_to_menu
