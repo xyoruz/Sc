@@ -1,0 +1,43 @@
+#!/bin/bash
+# ============================================================
+# m-vless - Sub-menu Vless (Xray)
+# Lokasi: /usr/local/sbin/m-vless
+# ============================================================
+
+BASE="/usr/local/sbin/xyr"
+source "$BASE/lib/config.sh"
+source "$BASE/lib/common.sh"
+
+require_root
+
+N_USER=0
+[[ -f "$DB_VLESS" ]] && N_USER=$(grep -c "^${PREFIX_VLESS}" "$DB_VLESS")
+
+clear
+echo -e "${C_CYAN}════════════════════════════════════════════════════════${C_RESET}"
+echo -e "             ${C_YELLOW}MENU VLESS (XRAY)${C_RESET}"
+echo -e "${C_CYAN}════════════════════════════════════════════════════════${C_RESET}"
+echo -e "   Total user: ${C_GREEN}$N_USER${C_RESET}"
+echo ""
+echo -e "   ${C_YELLOW}[1]${C_RESET}  Create Vless Account"
+echo -e "   ${C_YELLOW}[2]${C_RESET}  Trial Vless Account"
+echo -e "   ${C_YELLOW}[3]${C_RESET}  Renew Vless Account"
+echo -e "   ${C_YELLOW}[4]${C_RESET}  Delete Vless Account"
+echo -e "   ${C_YELLOW}[5]${C_RESET}  Cek Login Vless"
+echo -e "   ${C_YELLOW}[6]${C_RESET}  List User Vless"
+echo ""
+echo -e "   ${C_RED}[0]${C_RESET}  Kembali ke Menu Utama"
+echo ""
+echo -e "${C_GRAY}────────────────────────────────────────────────────────${C_RESET}"
+read -rp "   Pilih menu [1-6 atau 0]: " opt
+
+case "$opt" in
+    1) clear; addvless ;;
+    2) clear; trialvless ;;
+    3) clear; renewvless ;;
+    4) clear; delvless ;;
+    5) clear; cekvless ;;
+    6) clear; member-vless 2>/dev/null || print_warn "Fitur list belum tersedia" ;;
+    0) clear; menu ;;
+    *) m-vless ;;
+esac

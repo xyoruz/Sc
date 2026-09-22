@@ -1,0 +1,37 @@
+#!/bin/bash
+# ============================================================
+# m-trial - Sub-menu Trial (semua layanan)
+# Lokasi: /usr/local/sbin/m-trial
+# ============================================================
+
+BASE="/usr/local/sbin/xyr"
+source "$BASE/lib/config.sh"
+source "$BASE/lib/common.sh"
+
+require_root
+
+clear
+echo -e "${C_CYAN}════════════════════════════════════════════════════════${C_RESET}"
+echo -e "                  ${C_YELLOW}MENU TRIAL${C_RESET}"
+echo -e "${C_CYAN}════════════════════════════════════════════════════════${C_RESET}"
+echo ""
+echo -e "   ${C_YELLOW}[1]${C_RESET}  Trial SSH / OpenVPN"
+echo -e "   ${C_YELLOW}[2]${C_RESET}  Trial Vmess"
+echo -e "   ${C_YELLOW}[3]${C_RESET}  Trial Vless"
+echo -e "   ${C_YELLOW}[4]${C_RESET}  Trial Trojan"
+echo -e "   ${C_YELLOW}[5]${C_RESET}  Trial Shadowsocks"
+echo ""
+echo -e "   ${C_RED}[0]${C_RESET}  Kembali ke Menu Utama"
+echo ""
+echo -e "${C_GRAY}────────────────────────────────────────────────────────${C_RESET}"
+read -rp "   Pilih menu [1-5 atau 0]: " opt
+
+case "$opt" in
+    1) clear; trial ;;
+    2) clear; trialws ;;
+    3) clear; trialvless ;;
+    4) clear; trialtr ;;
+    5) clear; trialss ;;
+    0) clear; menu ;;
+    *) m-trial ;;
+esac

@@ -1,0 +1,43 @@
+#!/bin/bash
+# ============================================================
+# m-trojan - Sub-menu Trojan (Xray)
+# Lokasi: /usr/local/sbin/m-trojan
+# ============================================================
+
+BASE="/usr/local/sbin/xyr"
+source "$BASE/lib/config.sh"
+source "$BASE/lib/common.sh"
+
+require_root
+
+N_USER=0
+[[ -f "$DB_TROJAN" ]] && N_USER=$(grep -c "^${PREFIX_TROJAN}" "$DB_TROJAN")
+
+clear
+echo -e "${C_CYAN}════════════════════════════════════════════════════════${C_RESET}"
+echo -e "             ${C_YELLOW}MENU TROJAN (XRAY)${C_RESET}"
+echo -e "${C_CYAN}════════════════════════════════════════════════════════${C_RESET}"
+echo -e "   Total user: ${C_GREEN}$N_USER${C_RESET}"
+echo ""
+echo -e "   ${C_YELLOW}[1]${C_RESET}  Create Trojan Account"
+echo -e "   ${C_YELLOW}[2]${C_RESET}  Trial Trojan Account"
+echo -e "   ${C_YELLOW}[3]${C_RESET}  Renew Trojan Account"
+echo -e "   ${C_YELLOW}[4]${C_RESET}  Delete Trojan Account"
+echo -e "   ${C_YELLOW}[5]${C_RESET}  Cek Login Trojan"
+echo -e "   ${C_YELLOW}[6]${C_RESET}  List User Trojan"
+echo ""
+echo -e "   ${C_RED}[0]${C_RESET}  Kembali ke Menu Utama"
+echo ""
+echo -e "${C_GRAY}────────────────────────────────────────────────────────${C_RESET}"
+read -rp "   Pilih menu [1-6 atau 0]: " opt
+
+case "$opt" in
+    1) clear; addtr ;;
+    2) clear; trialtr ;;
+    3) clear; renewtr ;;
+    4) clear; deltr ;;
+    5) clear; cektr ;;
+    6) clear; member-tr 2>/dev/null || print_warn "Fitur list belum tersedia" ;;
+    0) clear; menu ;;
+    *) m-trojan ;;
+esac

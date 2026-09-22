@@ -1,0 +1,104 @@
+#!/bin/bash
+# ============================================================
+# menu - Menu utama autoscript XyrVPN
+# Lokasi: /usr/local/sbin/menu
+# ============================================================
+
+BASE="/usr/local/sbin/xyr"
+source "$BASE/lib/config.sh"
+source "$BASE/lib/common.sh"
+
+require_root
+
+# ---------- Ambil Info Sistem ----------
+get_status() {
+    local svc="$1"
+    if systemctl is-active --quiet "$svc" 2>/dev/null; then
+        echo -e "${C_GREEN}ON${C_RESET}"
+    else
+        echo -e "${C_RED}OFF${C_RESET}"
+    fi
+}
+
+# ---------- Info Sistem ----------
+OS_INFO=$(grep PRETTY_NAME /etc/os-release 2>/dev/null | cut -d'"' -f2)
+UPTIME=$(uptime -p 2>/dev/null | sed 's/up //')
+IP_VPS=$(get_my_ip)
+DOMAIN=$(get_domain)
+[[ -z "$DOMAIN" ]] && DOMAIN="belum di-set"
+
+# ---------- Hitung Jumlah User ----------
+count_users() {
+    local prefix="$1" db="$2"
+    if [[ -f "$db" ]]; then
+        grep -c "^${prefix}" "$db" 2>/dev/null || echo 0
+    else
+        echo 0
+    fi
+}
+
+N_SSH=$(awk -F: '$3 >= 1000 && $1 != "nobody" {print $1}' /etc/passwd 2>/dev/null | wc -l)
+N_VMESS=$(count_users "$PREFIX_VMESS" "$DB_VMESS")
+N_VLESS=$(count_users "$PREFIX_VLESS" "$DB_VLESS")
+N_TROJAN=$(count_users "$PREFIX_TROJAN" "$DB_TROJAN")
+N_SS=$(count_users "$PREFIX_SS" "$DB_SS")
+
+# ---------- Status Service ----------
+S_NGINX=$(get_status nginx)
+S_XRAY=$(get_status xray)
+S_SSH=$(get_status ssh 2>/dev/null || get_status sshd)
+S_DROPBEAR=$(get_status dropbear)
+S_HAPROXY=$(get_status haproxy)
+S_CRON=$(get_status cron)
+
+# ---------- Status Auto-lock ----------
+if autolock_enabled; then
+    AUTOLOCK="${C_GREEN}ON${C_RESET}"
+else
+    AUTOLOCK="${C_RED}OFF${C_RESET}"
+fi
+
+# ---------- Render Menu ----------
+clear
+echo -e "${C_CYAN}╔══════════════════════════════════════════════════════╗${C_RESET}"
+echo -e "${C_CYAN}║${C_RESET}       ${C_YELLOW}XYR TUNNELING SCRIPT${C_RESET}  ${C_GREEN}Stable Edition${C_RESET}       ${C_CYAN}║${C_RESET}"
+echo -e "${C_CYAN}╚══════════════════════════════════════════════════════╝${C_RESET}"
+echo -e "${C_GRAY}────────────────────────────────────────────────────────${C_RESET}"
+echo -e "  ${C_WHITE}OS${C_RESET}      : $OS_INFO"
+echo -e "  ${C_WHITE}Uptime${C_RESET}  : $UPTIME"
+echo -e "  ${C_WHITE}IP VPS${C_RESET}  : $IP_VPS"
+echo -e "  ${C_WHITE}Domain${C_RESET}  : $DOMAIN"
+echo -e "${C_GRAY}────────────────────────────────────────────────────────${C_RESET}"
+echo -e "  ${C_WHITE}SSH${C_RESET}     : $N_SSH user   ${C_WHITE}Vmess${C_RESET}: $N_VMESS   ${C_WHITE}Vless${C_RESET}: $N_VLESS"
+echo -e "  ${C_WHITE}Trojan${C_RESET}  : $N_TROJAN   ${C_WHITE}SS${C_RESET}: $N_SS   ${C_WHITE}AutoLock${C_RESET}: $AUTOLOCK"
+echo -e "${C_GRAY}────────────────────────────────────────────────────────${C_RESET}"
+echo -e "  ${C_WHITE}Nginx${C_RESET}: $S_NGINX   ${C_WHITE}Xray${C_RESET}: $S_XRAY   ${C_WHITE}SSH${C_RESET}: $S_SSH"
+echo -e "  ${C_WHITE}Dropbear${C_RESET}: $S_DROPBEAR   ${C_WHITE}HAProxy${C_RESET}: $S_HAPROXY   ${C_WHITE}Cron${C_RESET}: $S_CRON"
+echo -e "${C_GRAY}────────────────────────────────────────────────────────${C_RESET}"
+echo ""
+echo -e "   ${C_YELLOW}[1]${C_RESET}  Menu SSH & OpenVPN"
+echo -e "   ${C_YELLOW}[2]${C_RESET}  Menu Vmess (Xray)"
+echo -e "   ${C_YELLOW}[3]${C_RESET}  Menu Vless (Xray)"
+echo -e "   ${C_YELLOW}[4]${C_RESET}  Menu Trojan (Xray)"
+echo -e "   ${C_YELLOW}[5]${C_RESET}  Menu Shadowsocks"
+echo -e "   ${C_YELLOW}[6]${C_RESET}  Menu Limit (IP & Quota)"
+echo -e "   ${C_YELLOW}[7]${C_RESET}  Menu Utility"
+echo -e "   ${C_YELLOW}[8]${C_RESET}  Menu Trial"
+echo ""
+echo -e "   ${C_RED}[x]${C_RESET}  Keluar"
+echo ""
+echo -e "${C_GRAY}────────────────────────────────────────────────────────${C_RESET}"
+read -rp "   Pilih menu [1-8 atau x]: " opt
+
+case "$opt" in
+    1) clear; m-ssh ;;
+    2) clear; m-vmess ;;
+    3) clear; m-vless ;;
+    4) clear; m-trojan ;;
+    5) clear; m-ss ;;
+    6) clear; m-limit 2>/dev/null || limit-menu ;;
+    7) clear; m-utility ;;
+    8) clear; m-trial ;;
+    x|X) clear; exit 0 ;;
+    *) menu ;;
+esac

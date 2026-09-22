@@ -1,0 +1,77 @@
+#!/bin/bash
+# ============================================================
+# m-limit - Sub-menu Limit IP & Quota
+# Lokasi: /usr/local/sbin/m-limit
+# ============================================================
+
+BASE="/usr/local/sbin/xyr"
+source "$BASE/lib/config.sh"
+source "$BASE/lib/common.sh"
+
+require_root
+
+# Status auto-lock
+if autolock_enabled; then
+    STATUS="${C_GREEN}AKTIF${C_RESET}"
+else
+    STATUS="${C_RED}MATI${C_RESET}"
+fi
+
+# Hitung user yang ter-lock
+count_locked() {
+    local total=0
+    for svc in vmess vless trojan ss ssh; do
+        if [[ -d "$LOCKED_DIR/$svc" ]]; then
+            local n
+            n=$(find "$LOCKED_DIR/$svc" -maxdepth 1 -type f 2>/dev/null | wc -l)
+            total=$((total + n))
+        fi
+    done
+    echo "$total"
+}
+N_LOCKED=$(count_locked)
+
+clear
+echo -e "${C_CYAN}════════════════════════════════════════════════════════${C_RESET}"
+echo -e "              ${C_YELLOW}MENU LIMIT IP & QUOTA${C_RESET}"
+echo -e "${C_CYAN}════════════════════════════════════════════════════════${C_RESET}"
+echo -e "   Auto-Lock     : $STATUS"
+echo -e "   User Ter-Lock : ${C_YELLOW}$N_LOCKED${C_RESET}"
+echo ""
+echo -e "   ${C_YELLOW}[1]${C_RESET}   Set / Ubah Limit IP User"
+echo -e "   ${C_YELLOW}[2]${C_RESET}   Set / Ubah Limit Quota User"
+echo -e "   ${C_YELLOW}[3]${C_RESET}   Manual Lock User"
+echo -e "   ${C_YELLOW}[4]${C_RESET}   Manual Unlock User"
+echo -e "   ${C_YELLOW}[5]${C_RESET}   Lihat User Ter-Lock"
+echo -e "   ${C_YELLOW}[6]${C_RESET}   Reset Pemakaian Quota User"
+echo ""
+echo -e "   ${C_YELLOW}[7]${C_RESET}   Aktifkan Auto-Lock"
+echo -e "   ${C_YELLOW}[8]${C_RESET}   Matikan Auto-Lock"
+echo ""
+echo -e "   ${C_RED}[0]${C_RESET}   Kembali ke Menu Utama"
+echo ""
+echo -e "${C_GRAY}────────────────────────────────────────────────────────${C_RESET}"
+read -rp "   Pilih menu [1-8 atau 0]: " opt
+
+case "$opt" in
+    1) clear; limit-ip ;;
+    2) clear; limit-quota ;;
+    3) clear; lock-user ;;
+    4) clear; unlock-user ;;
+    5) clear; cek-lock ;;
+    6) clear; reset-quota ;;
+    7)
+        autolock_set ON
+        print_ok "Auto-Lock diaktifkan"
+        log_info "Auto-Lock ON by root"
+        back_to_menu
+        ;;
+    8)
+        autolock_set OFF
+        print_ok "Auto-Lock dimatikan"
+        log_info "Auto-Lock OFF by root"
+        back_to_menu
+        ;;
+    0) clear; menu ;;
+    *) m-limit ;;
+esac

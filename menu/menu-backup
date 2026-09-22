@@ -1,0 +1,15 @@
+#!/bin/bash
+# ============================================================
+# menu-backup - Placeholder (fitur backup tidak diaktifkan)
+# Lokasi: /usr/local/sbin/menu-backup
+# ============================================================
+
+BASE="/usr/local/sbin/xyr"
+source "$BASE/lib/config.sh"
+source "$BASE/lib/common.sh"
+
+clear
+echo -e "${C_YELLOW}Fitur backup tidak diaktifkan pada script ini.${C_RESET}"
+echo ""
+read -n 1 -s -r -p "Tekan [Enter] untuk kembali..."
+menu

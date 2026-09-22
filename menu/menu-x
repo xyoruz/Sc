@@ -1,0 +1,41 @@
+#!/bin/bash
+# ============================================================
+# menu-x - Extra menu
+# Lokasi: /usr/local/sbin/menu-x
+# ============================================================
+
+BASE="/usr/local/sbin/xyr"
+source "$BASE/lib/config.sh"
+source "$BASE/lib/common.sh"
+
+require_root
+
+clear
+echo -e "${C_CYAN}════════════════════════════════════════════════════════${C_RESET}"
+echo -e "                  ${C_YELLOW}MENU EXTRA${C_RESET}"
+echo -e "${C_CYAN}════════════════════════════════════════════════════════${C_RESET}"
+echo ""
+echo -e "   ${C_YELLOW}[1]${C_RESET}   Perbaiki Sertifikat SSL"
+echo -e "   ${C_YELLOW}[2]${C_RESET}   Restart Semua Service"
+echo -e "   ${C_YELLOW}[3]${C_RESET}   Reboot VPS"
+echo ""
+echo -e "   ${C_RED}[0]${C_RESET}   Kembali ke Menu Utama"
+echo ""
+echo -e "${C_GRAY}────────────────────────────────────────────────────────${C_RESET}"
+read -rp "   Pilih menu [1-3 atau 0]: " opt
+
+case "$opt" in
+    1) clear; addhost ;;
+    2) clear
+       for s in nginx xray ssh dropbear haproxy cron; do
+           systemctl restart "$s" >/dev/null 2>&1
+       done
+       print_ok "Semua service direstart"
+       back_to_menu ;;
+    3) clear
+       print_warn "Reboot dalam 5 detik. Tekan Ctrl+C untuk membatalkan."
+       sleep 5
+       reboot ;;
+    0) clear; menu ;;
+    *) menu-x ;;
+esac

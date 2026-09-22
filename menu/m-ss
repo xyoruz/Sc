@@ -1,0 +1,41 @@
+#!/bin/bash
+# ============================================================
+# m-ss - Sub-menu Shadowsocks (Xray)
+# Lokasi: /usr/local/sbin/m-ss
+# ============================================================
+
+BASE="/usr/local/sbin/xyr"
+source "$BASE/lib/config.sh"
+source "$BASE/lib/common.sh"
+
+require_root
+
+N_USER=0
+[[ -f "$DB_SS" ]] && N_USER=$(grep -c "^${PREFIX_SS}" "$DB_SS")
+
+clear
+echo -e "${C_CYAN}════════════════════════════════════════════════════════${C_RESET}"
+echo -e "          ${C_YELLOW}MENU SHADOWSOCKS (XRAY)${C_RESET}"
+echo -e "${C_CYAN}════════════════════════════════════════════════════════${C_RESET}"
+echo -e "   Total user: ${C_GREEN}$N_USER${C_RESET}"
+echo ""
+echo -e "   ${C_YELLOW}[1]${C_RESET}  Create Shadowsocks Account"
+echo -e "   ${C_YELLOW}[2]${C_RESET}  Trial Shadowsocks Account"
+echo -e "   ${C_YELLOW}[3]${C_RESET}  Renew Shadowsocks Account"
+echo -e "   ${C_YELLOW}[4]${C_RESET}  Delete Shadowsocks Account"
+echo -e "   ${C_YELLOW}[5]${C_RESET}  Cek Login Shadowsocks"
+echo ""
+echo -e "   ${C_RED}[0]${C_RESET}  Kembali ke Menu Utama"
+echo ""
+echo -e "${C_GRAY}────────────────────────────────────────────────────────${C_RESET}"
+read -rp "   Pilih menu [1-5 atau 0]: " opt
+
+case "$opt" in
+    1) clear; addss ;;
+    2) clear; trialss ;;
+    3) clear; renewss ;;
+    4) clear; delss ;;
+    5) clear; cekss ;;
+    0) clear; menu ;;
+    *) m-ss ;;
+esac

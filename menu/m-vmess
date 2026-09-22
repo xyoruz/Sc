@@ -1,0 +1,44 @@
+#!/bin/bash
+# ============================================================
+# m-vmess - Sub-menu Vmess (Xray)
+# Lokasi: /usr/local/sbin/m-vmess
+# ============================================================
+
+BASE="/usr/local/sbin/xyr"
+source "$BASE/lib/config.sh"
+source "$BASE/lib/common.sh"
+
+require_root
+
+# Hitung user
+N_USER=0
+[[ -f "$DB_VMESS" ]] && N_USER=$(grep -c "^${PREFIX_VMESS}" "$DB_VMESS")
+
+clear
+echo -e "${C_CYAN}════════════════════════════════════════════════════════${C_RESET}"
+echo -e "             ${C_YELLOW}MENU VMESS (XRAY)${C_RESET}"
+echo -e "${C_CYAN}════════════════════════════════════════════════════════${C_RESET}"
+echo -e "   Total user: ${C_GREEN}$N_USER${C_RESET}"
+echo ""
+echo -e "   ${C_YELLOW}[1]${C_RESET}  Create Vmess Account"
+echo -e "   ${C_YELLOW}[2]${C_RESET}  Trial Vmess Account"
+echo -e "   ${C_YELLOW}[3]${C_RESET}  Renew Vmess Account"
+echo -e "   ${C_YELLOW}[4]${C_RESET}  Delete Vmess Account"
+echo -e "   ${C_YELLOW}[5]${C_RESET}  Cek Login Vmess"
+echo -e "   ${C_YELLOW}[6]${C_RESET}  List User Vmess"
+echo ""
+echo -e "   ${C_RED}[0]${C_RESET}  Kembali ke Menu Utama"
+echo ""
+echo -e "${C_GRAY}────────────────────────────────────────────────────────${C_RESET}"
+read -rp "   Pilih menu [1-6 atau 0]: " opt
+
+case "$opt" in
+    1) clear; addws ;;
+    2) clear; trialws ;;
+    3) clear; renewws ;;
+    4) clear; delws ;;
+    5) clear; cekws ;;
+    6) clear; member-ws ;;
+    0) clear; menu ;;
+    *) m-vmess ;;
+esac

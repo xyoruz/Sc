@@ -1,0 +1,49 @@
+#!/bin/bash
+# ============================================================
+# m-ssh - Sub-menu SSH & OpenVPN
+# Lokasi: /usr/local/sbin/m-ssh
+# ============================================================
+
+BASE="/usr/local/sbin/xyr"
+source "$BASE/lib/config.sh"
+source "$BASE/lib/common.sh"
+
+require_root
+
+clear
+echo -e "${C_CYAN}════════════════════════════════════════════════════════${C_RESET}"
+echo -e "           ${C_YELLOW}MENU SSH & OPENVPN${C_RESET}"
+echo -e "${C_CYAN}════════════════════════════════════════════════════════${C_RESET}"
+echo ""
+echo -e "   ${C_YELLOW}[1]${C_RESET}  Create SSH Account"
+echo -e "   ${C_YELLOW}[2]${C_RESET}  Trial SSH Account"
+echo -e "   ${C_YELLOW}[3]${C_RESET}  Renew SSH Account"
+echo -e "   ${C_YELLOW}[4]${C_RESET}  Delete SSH Account"
+echo -e "   ${C_YELLOW}[5]${C_RESET}  Cek Login SSH"
+echo -e "   ${C_YELLOW}[6]${C_RESET}  List User SSH"
+echo -e "   ${C_YELLOW}[7]${C_RESET}  Delete User Expired"
+echo -e "   ${C_YELLOW}[8]${C_RESET}  Auto-Kill Multi Login"
+echo -e "   ${C_YELLOW}[9]${C_RESET}  Lock User SSH"
+echo -e "   ${C_YELLOW}[10]${C_RESET} Unlock User SSH"
+echo -e "   ${C_YELLOW}[11]${C_RESET} Cek Multi Login"
+echo ""
+echo -e "   ${C_RED}[0]${C_RESET}  Kembali ke Menu Utama"
+echo ""
+echo -e "${C_GRAY}────────────────────────────────────────────────────────${C_RESET}"
+read -rp "   Pilih menu [1-11 atau 0]: " opt
+
+case "$opt" in
+    1)  clear; addssh ;;
+    2)  clear; trial ;;
+    3)  clear; renewssh ;;
+    4)  clear; delssh ;;
+    5)  clear; cekssh ;;
+    6)  clear; member ;;
+    7)  clear; delexp ;;
+    8)  clear; autokill ;;
+    9)  clear; lock ;;
+    10) clear; unlock ;;
+    11) clear; ceklim ;;
+    0)  clear; menu ;;
+    *)  m-ssh ;;
+esac
