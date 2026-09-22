@@ -1,0 +1,177 @@
+{
+  "log": {
+    "loglevel": "warning",
+    "error": "/var/log/xray/error.log",
+    "access": "/var/log/xray/access.log"
+  },
+  "api": {
+    "services": ["HandlerService", "LoggerService", "StatsService"],
+    "tag": "api"
+  },
+  "stats": {},
+  "policy": {
+    "levels": {
+      "0": {
+        "handshake": 4,
+        "connIdle": 300,
+        "uplinkOnly": 1,
+        "downlinkOnly": 1,
+        "statsUserUplink": true,
+        "statsUserDownlink": true
+      }
+    },
+    "system": {
+      "statsInboundUplink": true,
+      "statsInboundDownlink": true,
+      "statsOutboundUplink": true,
+      "statsOutboundDownlink": true
+    }
+  },
+  "dns": {
+    "hosts": {
+      "dns.google": "8.8.8.8",
+      "dns.pub": "119.29.29.29",
+      "dns.alidns.com": "223.5.5.5",
+      "geosite:category-ads-all": "127.0.0.1"
+    },
+    "servers": [
+      {
+        "address": "https://1.1.1.1/dns-query",
+        "domains": ["geosite:geolocation-!cn"],
+        "expectIPs": ["geoip:!cn"]
+      },
+      "8.8.8.8",
+      {
+        "address": "114.114.114.114",
+        "port": 53,
+        "domains": ["geosite:cn", "geosite:category-games@cn"],
+        "expectIPs": ["geoip:cn"],
+        "skipFallback": true
+      },
+      "localhost"
+    ]
+  },
+  "inbounds": [
+    {
+      "listen": "127.0.0.1",
+      "port": 10000,
+      "protocol": "dokodemo-door",
+      "settings": {"address": "127.0.0.1"},
+      "tag": "api"
+    },
+    {
+      "listen": "127.0.0.1",
+      "port": 10001,
+      "protocol": "vless",
+      "settings": {
+        "decryption": "none",
+        "clients": [
+          {"id": "1d1c1d94-6987-4658-a4dc-8821a30fe7e0", "email": "dummy"}
+        ]
+      },
+      "streamSettings": {"network": "ws", "wsSettings": {"path": "/vless"}},
+      "sniffing": {"enabled": true, "destOverride": ["http", "tls"]}
+    },
+    {
+      "listen": "127.0.0.1",
+      "port": 10002,
+      "protocol": "vmess",
+      "settings": {
+        "clients": [
+          {"id": "1d1c1d94-6987-4658-a4dc-8821a30fe7e0", "alterId": 0, "email": "dummy"}
+        ]
+      },
+      "streamSettings": {"network": "ws", "wsSettings": {"path": "/vmess"}},
+      "sniffing": {"enabled": true, "destOverride": ["http", "tls"]}
+    },
+    {
+      "listen": "127.0.0.1",
+      "port": 10003,
+      "protocol": "trojan",
+      "settings": {
+        "clients": [
+          {"password": "1d1c1d94-6987-4658-a4dc-8821a30fe7e0", "email": "dummy"}
+        ]
+      },
+      "streamSettings": {"network": "ws", "wsSettings": {"path": "/trojan-ws"}},
+      "sniffing": {"enabled": true, "destOverride": ["http", "tls"]}
+    },
+    {
+      "listen": "127.0.0.1",
+      "port": 10004,
+      "protocol": "shadowsocks",
+      "settings": {
+        "clients": [
+          {"method": "aes-128-gcm", "password": "1d1c1d94-6987-4658-a4dc-8821a30fe7e0", "email": "dummy"}
+        ],
+        "network": "tcp,udp"
+      },
+      "streamSettings": {"network": "ws", "wsSettings": {"path": "/ss-ws"}},
+      "sniffing": {"enabled": true, "destOverride": ["http", "tls"]}
+    },
+    {
+      "listen": "127.0.0.1",
+      "port": 10005,
+      "protocol": "vless",
+      "settings": {
+        "decryption": "none",
+        "clients": [
+          {"id": "1d1c1d94-6987-4658-a4dc-8821a30fe7e0", "email": "dummy"}
+        ]
+      },
+      "streamSettings": {"network": "grpc", "grpcSettings": {"serviceName": "vless-grpc"}},
+      "sniffing": {"enabled": true, "destOverride": ["http", "tls"]}
+    },
+    {
+      "listen": "127.0.0.1",
+      "port": 10006,
+      "protocol": "vmess",
+      "settings": {
+        "clients": [
+          {"id": "1d1c1d94-6987-4658-a4dc-8821a30fe7e0", "alterId": 0, "email": "dummy"}
+        ]
+      },
+      "streamSettings": {"network": "grpc", "grpcSettings": {"serviceName": "vmess-grpc"}},
+      "sniffing": {"enabled": true, "destOverride": ["http", "tls"]}
+    },
+    {
+      "listen": "127.0.0.1",
+      "port": 10007,
+      "protocol": "trojan",
+      "settings": {
+        "clients": [
+          {"password": "1d1c1d94-6987-4658-a4dc-8821a30fe7e0", "email": "dummy"}
+        ]
+      },
+      "streamSettings": {"network": "grpc", "grpcSettings": {"serviceName": "trojan-grpc"}},
+      "sniffing": {"enabled": true, "destOverride": ["http", "tls"]}
+    },
+    {
+      "listen": "127.0.0.1",
+      "port": 10008,
+      "protocol": "shadowsocks",
+      "settings": {
+        "clients": [
+          {"method": "aes-128-gcm", "password": "1d1c1d94-6987-4658-a4dc-8821a30fe7e0", "email": "dummy"}
+        ],
+        "network": "tcp,udp"
+      },
+      "streamSettings": {"network": "grpc", "grpcSettings": {"serviceName": "ss-grpc"}},
+      "sniffing": {"enabled": true, "destOverride": ["http", "tls"]}
+    }
+  ],
+  "outbounds": [
+    {"protocol": "freedom", "tag": "direct"},
+    {"protocol": "blackhole", "tag": "blocked"}
+  ],
+  "routing": {
+    "domainStrategy": "AsIs",
+    "rules": [
+      {"type": "field", "inboundTag": ["api"], "outboundTag": "api"},
+      {"type": "field", "outboundTag": "blocked", "domain": ["geosite:category-ads-all"]},
+      {"type": "field", "outboundTag": "blocked", "protocol": ["bittorrent"]},
+      {"type": "field", "outboundTag": "blocked", "ip": ["geoip:private"]},
+      {"type": "field", "outboundTag": "direct", "network": "tcp,udp"}
+    ]
+  }
+}

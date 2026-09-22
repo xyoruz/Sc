@@ -1,0 +1,42 @@
+# Port SSH
+Port 22
+
+# Protocol
+Protocol 2
+
+# Host keys
+HostKey /etc/ssh/ssh_host_rsa_key
+HostKey /etc/ssh/ssh_host_ecdsa_key
+HostKey /etc/ssh/ssh_host_ed25519_key
+
+# Logging
+SyslogFacility AUTH
+LogLevel INFO
+
+# Authentication
+LoginGraceTime 120
+PermitRootLogin yes
+StrictModes yes
+MaxAuthTries 6
+MaxSessions 100
+PubkeyAuthentication yes
+PasswordAuthentication yes
+PermitEmptyPasswords no
+ChallengeResponseAuthentication no
+UsePAM yes
+
+# Allow
+AllowTcpForwarding yes
+X11Forwarding yes
+PrintMotd no
+PrintLastLog yes
+TCPKeepAlive yes
+Compression delayed
+ClientAliveInterval 120
+ClientAliveCountMax 2
+
+# Banner
+Banner /etc/issue.net
+
+# Subsystem
+Subsystem sftp /usr/lib/openssh/sftp-server
