@@ -1,0 +1,56 @@
+#!/bin/bash
+# ============================================================
+# delvless - Delete Vless Account
+# Lokasi: /usr/local/sbin/delvless
+# ============================================================
+
+BASE="/usr/local/sbin/xyr"
+source "$BASE/lib/config.sh"
+source "$BASE/lib/common.sh"
+source "$BASE/lib/xray-helper.sh"
+
+require_root
+acquire_lock "$LOCKFILE_DEL"
+
+print_header "DELETE VLESS ACCOUNT"
+
+if [[ -f "$DB_VLESS" ]]; then
+    printf "%-20s %s\n" "USERNAME" "EXPIRED"
+    print_line
+    awk -v p="$PREFIX_VLESS" '$1==p {printf "%-20s %s\n", $2, $3}' "$DB_VLESS"
+    print_line
+else
+    print_warn "DB Vless kosong"
+    release_lock; back_to_menu; exit 0
+fi
+echo ""
+
+while :; do
+    read -rp "Username yang akan dihapus: " USER
+    [[ -z "$USER" ]] && { print_warn "Dibatalkan"; release_lock; back_to_menu; exit 0; }
+    if ! grep -qw "$USER" "$XRAY_CONF" 2>/dev/null; then
+        print_error "User tidak ditemukan"; continue
+    fi
+    break
+done
+
+xray_backup_config
+xray_del_user "$PREFIX_VLESS" "$USER"
+
+if ! xray_apply; then
+    print_error "Gagal hapus. Rollback."
+    release_lock; back_to_menu; exit 1
+fi
+
+db_del_user "$DB_VLESS" "$PREFIX_VLESS" "$USER"
+rm -f "${QUOTA_DIR}/vless/${USER}"
+rm -f "${LIMITIP_DIR}/vless/${USER}"
+rm -f "${USAGE_DIR}/vless/${USER}"
+rm -f "${LOCKED_DIR}/vless/${USER}"
+rm -f "${NGINX_WEB}/vless-${USER}.txt"
+
+log_info "Vless deleted: $USER"
+
+print_ok "User $USER berhasil dihapus"
+release_lock
+back_to_menu

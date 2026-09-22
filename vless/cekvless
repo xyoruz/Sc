@@ -1,0 +1,45 @@
+#!/bin/bash
+# ============================================================
+# cekvless - Cek user Vless (aktif + IP + quota)
+# Lokasi: /usr/local/sbin/cekvless
+# ============================================================
+
+BASE="/usr/local/sbin/xyr"
+source "$BASE/lib/config.sh"
+source "$BASE/lib/common.sh"
+
+require_root
+
+clear
+print_line
+print_title "           CEK USER VLESS"
+print_line
+
+data=($(grep "^${PREFIX_VLESS}" "$XRAY_CONF" 2>/dev/null | cut -d ' ' -f 2 | sort -u))
+[[ ${#data[@]} -eq 0 ]] && { print_warn "Belum ada user Vless"; back_to_menu; exit 0; }
+
+for user in "${data[@]}"; do
+    [[ -z "$user" ]] && continue
+
+    ips=$(grep -w "$user" "$XRAY_LOG" 2>/dev/null | tail -n 500 | \
+        awk '{print $3}' | sed 's/tcp://;s/^.*://' | sort -u | wc -l)
+
+    quota_bytes=$(cat "$QUOTA_DIR/vless/$user" 2>/dev/null || echo 0)
+    usage_bytes=$(cat "$USAGE_DIR/vless/$user" 2>/dev/null || echo 0)
+    quota_h=$(human_size "$quota_bytes")
+    usage_h=$(human_size "$usage_bytes")
+
+    limit_ip=$(cat "$LIMITIP_DIR/vless/$user" 2>/dev/null || echo 0)
+    exp=$(grep -m1 "^${PREFIX_VLESS} ${user} " "$XRAY_CONF" | cut -d ' ' -f 3)
+
+    [[ -f "$LOCKED_DIR/vless/$user" ]] && lock="${C_RED}LOCKED${C_RESET}" || lock="${C_GREEN}OK${C_RESET}"
+
+    echo "  ${C_CYAN}User${C_RESET}     : $user"
+    echo "  Expired  : $exp"
+    echo "  Status   : $lock"
+    echo "  IP Aktif : $ips / Limit: $limit_ip"
+    echo "  Quota    : $usage_h / $quota_h"
+    print_line
+done
+
+back_to_menu

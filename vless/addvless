@@ -1,0 +1,122 @@
+#!/bin/bash
+# ============================================================
+# addvless - Create Vless Account (WS + gRPC)
+# Lokasi: /usr/local/sbin/addvless
+# ============================================================
+
+BASE="/usr/local/sbin/xyr"
+source "$BASE/lib/config.sh"
+source "$BASE/lib/common.sh"
+source "$BASE/lib/validate.sh"
+source "$BASE/lib/xray-helper.sh"
+
+require_root
+acquire_lock "$LOCKFILE_ADD"
+
+print_header "CREATE VLESS ACCOUNT"
+
+domain=$(get_domain)
+[[ -z "$domain" ]] && { print_error "Domain belum di-set"; release_lock; back_to_menu; exit 1; }
+
+IP=$(get_my_ip)
+ISP=$(cat /root/.info/.isp 2>/dev/null || echo "-")
+CITY=$(cat /root/.info/.city 2>/dev/null || echo "-")
+
+# ---------- Input ----------
+while :; do
+    ask_username USER "Username"
+    if grep -qw "$USER" "$XRAY_CONF" 2>/dev/null; then
+        print_error "Username '$USER' sudah ada di config Xray"
+        continue
+    fi
+    break
+done
+
+ask_number DAYS "Expired (hari)" 1 3650 30
+ask_number QUOTA_GB "Limit Quota GB (0=unlimited)" 0 9999 0
+ask_number IPLIMIT "Limit IP (0=unlimited)" 0 99 2
+
+uuid=$(cat /proc/sys/kernel/random/uuid)
+exp_date=$(date -d "$DAYS days" +"%Y-%m-%d")
+exp_display=$(date -d "$DAYS days" +"%d %b, %Y")
+
+# ---------- Sisip ke config.json ----------
+xray_backup_config
+
+sed -i "/#vless\$/a\\#& ${USER} ${exp_date}\\
+},{\"id\": \"${uuid}\",\"email\": \"${USER}\"" "$XRAY_CONF"
+sed -i "/#vlessgrpc\$/a\\#& ${USER} ${exp_date}\\
+},{\"id\": \"${uuid}\",\"email\": \"${USER}\"" "$XRAY_CONF"
+
+if ! xray_apply; then
+    print_error "Config Xray corrupt, rollback!"
+    release_lock
+    back_to_menu
+    exit 1
+fi
+
+# ---------- Generate links ----------
+LINK_TLS="vless://${uuid}@${domain}:443?path=%2Fvless&security=tls&encryption=none&type=ws&host=${domain}&sni=${domain}#${USER}"
+LINK_NTLS="vless://${uuid}@${domain}:80?path=%2Fvless&encryption=none&type=ws&host=${domain}#${USER}"
+LINK_GRPC="vless://${uuid}@${domain}:443?mode=gun&security=tls&encryption=none&type=grpc&serviceName=vless-grpc&sni=${domain}#${USER}"
+
+# ---------- DB ----------
+db_save_user "$DB_VLESS" "$PREFIX_VLESS" "$USER" "$exp_date" "$uuid" "$QUOTA_GB" "$IPLIMIT"
+
+# ---------- Limit ----------
+[[ "$IPLIMIT" -gt 0 ]] && echo "$IPLIMIT" > "$LIMITIP_DIR/vless/$USER"
+[[ "$QUOTA_GB" -gt 0 ]] && echo "$((QUOTA_GB * 1024 * 1024 * 1024))" > "$QUOTA_DIR/vless/$USER"
+
+# ---------- File web ----------
+cat > "${NGINX_WEB}/vless-${USER}.txt" <<-END
+=================================
+Format Vless Account
+=================================
+Username         : $USER
+Host             : $domain
+Port TLS         : 443
+Port NTLS        : 80, 8080, 8880, 2082
+UUID             : $uuid
+Encryption       : none
+Network          : ws / grpc
+Path             : /vless
+ServiceName      : vless-grpc
+=================================
+Link TLS   : $LINK_TLS
+Link NTLS  : $LINK_NTLS
+Link gRPC  : $LINK_GRPC
+=================================
+Limit IP       : $IPLIMIT
+Limit Quota    : $QUOTA_GB GB
+Aktif Selama   : $DAYS Hari
+Berakhir Pada  : $exp_display
+=================================
+END
+chmod 644 "${NGINX_WEB}/vless-${USER}.txt"
+
+log_info "Vless created: $USER | exp: $exp_date"
+
+# ---------- Output ----------
+clear
+print_line
+print_title "        VLESS ACCOUNT BERHASIL DIBUAT"
+print_line
+echo "Username    : $USER"
+echo "Domain      : $domain"
+echo "UUID        : $uuid"
+echo "Limit IP    : $IPLIMIT"
+echo "Limit Quota : $QUOTA_GB GB"
+print_line
+echo "Link TLS    : $LINK_TLS"
+print_line
+echo "Link NTLS   : $LINK_NTLS"
+print_line
+echo "Link gRPC   : $LINK_GRPC"
+print_line
+echo "OpenClash   : http://$domain:81/vless-${USER}.txt"
+print_line
+echo "Aktif       : $DAYS Hari | Berakhir: $exp_display"
+print_line
+
+release_lock
+back_to_menu
