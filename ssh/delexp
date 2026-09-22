@@ -1,0 +1,58 @@
+#!/bin/bash
+# ============================================================
+# delexp - Hapus User SSH yang sudah expired
+# Lokasi: /usr/local/sbin/delexp
+# ============================================================
+
+BASE="/usr/local/sbin/xyr"
+source "$BASE/lib/config.sh"
+source "$BASE/lib/common.sh"
+
+require_root
+
+clear
+print_line
+print_title "       HAPUS USER SSH EXPIRED"
+print_line
+echo ""
+
+today_ts=$(date +%s)
+total_deleted=0
+
+while IFS=: read -r uname _ uid _; do
+    [[ "$uid" -lt 1000 ]] && continue
+    [[ "$uname" == "nobody" ]] && continue
+
+    exp_raw=$(chage -l "$uname" 2>/dev/null | grep "Account expires" | cut -d: -f2 | xargs)
+    [[ "$exp_raw" == "never" || -z "$exp_raw" ]] && continue
+
+    exp_ts=$(date -d "$exp_raw" +%s 2>/dev/null)
+    [[ -z "$exp_ts" ]] && continue
+
+    if [[ "$exp_ts" -lt "$today_ts" ]]; then
+        echo -e "  ${C_YELLOW}Removing:${C_RESET} $uname (expired: $exp_raw)"
+        userdel -f "$uname" >/dev/null 2>&1
+
+        # Bersihkan DB & file
+        [[ -f "$DB_SSH" ]] && sed -i "/^#ssh# ${uname} /d" "$DB_SSH"
+        rm -f "${QUOTA_DIR}/ssh/${uname}"
+        rm -f "${LIMITIP_DIR}/ssh/${uname}"
+        rm -f "${USAGE_DIR}/ssh/${uname}"
+        rm -f "${LOCKED_DIR}/ssh/${uname}"
+        rm -f "${NGINX_WEB}/ssh-${uname}.txt"
+
+        total_deleted=$((total_deleted + 1))
+    fi
+done < /etc/passwd
+
+print_line
+if [[ $total_deleted -gt 0 ]]; then
+    print_ok "Total user dihapus: $total_deleted"
+    restart_service ssh
+    log_info "SSH expired cleanup: $total_deleted users removed"
+else
+    print_info "Tidak ada user expired"
+fi
+print_line
+
+back_to_menu

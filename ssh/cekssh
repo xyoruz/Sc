@@ -1,0 +1,87 @@
+#!/bin/bash
+# ============================================================
+# cekssh - Cek Login SSH (aktif saat ini)
+# Lokasi: /usr/local/sbin/cekssh
+# ============================================================
+
+BASE="/usr/local/sbin/xyr"
+source "$BASE/lib/config.sh"
+source "$BASE/lib/common.sh"
+
+require_root
+
+clear
+print_line
+print_title "           USER SSH SEDANG LOGIN"
+print_line
+printf "%-8s %-15s %-18s %s\n" "PID" "USERNAME" "IP ADDRESS" "VIA"
+print_line
+
+# ---------- Dropbear ----------
+if [[ -f /var/log/auth.log ]]; then
+    LOG="/var/log/auth.log"
+elif [[ -f /var/log/secure ]]; then
+    LOG="/var/log/secure"
+else
+    LOG=""
+fi
+
+if [[ -n "$LOG" && -f "$LOG" ]]; then
+    grep -i dropbear "$LOG" 2>/dev/null | grep -i "Password auth succeeded" > /tmp/cekssh-db.txt
+
+    while read -r line; do
+        pid=$(echo "$line" | grep -oE "dropbear\[[0-9]+\]" | grep -oE "[0-9]+")
+        user=$(echo "$line" | awk '{print $10}')
+        ip=$(echo "$line" | awk '{print $12}')
+        if [[ -n "$pid" && -n "$user" ]]; then
+            printf "%-8s %-15s %-18s %s\n" "$pid" "$user" "$ip" "dropbear"
+        fi
+    done < /tmp/cekssh-db.txt
+
+    # ---------- SSH ----------
+    grep -i sshd "$LOG" 2>/dev/null | grep -i "Accepted password for" > /tmp/cekssh-sshd.txt
+
+    while read -r line; do
+        pid=$(echo "$line" | grep -oE "sshd\[[0-9]+\]" | grep -oE "[0-9]+")
+        user=$(echo "$line" | awk '{print $9}')
+        ip=$(echo "$line" | awk '{print $11}')
+        if [[ -n "$pid" && -n "$user" ]]; then
+            printf "%-8s %-15s %-18s %s\n" "$pid" "$user" "$ip" "sshd"
+        fi
+    done < /tmp/cekssh-sshd.txt
+
+    rm -f /tmp/cekssh-db.txt /tmp/cekssh-sshd.txt
+else
+    print_warn "Log SSH tidak ditemukan"
+fi
+
+# ---------- SSH aktif (dari utmp) ----------
+echo ""
+print_line
+print_title "           SESI SSH AKTIF (who)"
+print_line
+who 2>/dev/null || echo "  (tidak ada sesi)"
+
+# ---------- OpenVPN ----------
+if [[ -f /etc/openvpn/server/openvpn-tcp.log ]]; then
+    echo ""
+    print_line
+    print_title "           USER OPENVPN (TCP)"
+    print_line
+    printf "%-15s %-18s %s\n" "USERNAME" "IP ADDRESS" "CONNECTED"
+    grep "^CLIENT_LIST" /etc/openvpn/server/openvpn-tcp.log | \
+        awk -F',' '{printf "%-15s %-18s %s\n", $2, $3, $8}'
+fi
+
+if [[ -f /etc/openvpn/server/openvpn-udp.log ]]; then
+    echo ""
+    print_line
+    print_title "           USER OPENVPN (UDP)"
+    print_line
+    printf "%-15s %-18s %s\n" "USERNAME" "IP ADDRESS" "CONNECTED"
+    grep "^CLIENT_LIST" /etc/openvpn/server/openvpn-udp.log | \
+        awk -F',' '{printf "%-15s %-18s %s\n", $2, $3, $8}'
+fi
+
+print_line
+back_to_menu

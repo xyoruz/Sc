@@ -1,0 +1,31 @@
+#!/bin/bash
+# ============================================================
+# delssh-auto - Helper hapus user (dipanggil via at/cron)
+# Lokasi: /usr/local/sbin/delssh-auto
+# ============================================================
+
+BASE="/usr/local/sbin/xyr"
+source "$BASE/lib/config.sh"
+source "$BASE/lib/common.sh"
+
+USER="$1"
+[[ -z "$USER" ]] && exit 1
+
+if ! getent passwd "$USER" >/dev/null 2>&1; then
+    exit 0
+fi
+
+userdel -f "$USER" >/dev/null 2>&1
+
+[[ -f "$DB_SSH" ]] && sed -i "/^#ssh# ${USER} /d" "$DB_SSH"
+rm -f "${QUOTA_DIR}/ssh/${USER}"
+rm -f "${LIMITIP_DIR}/ssh/${USER}"
+rm -f "${USAGE_DIR}/ssh/${USER}"
+rm -f "${LOCKED_DIR}/ssh/${USER}"
+rm -f "${NGINX_WEB}/ssh-${USER}.txt"
+rm -f "/etc/cron.d/xyr-trial-ssh-${USER}"
+
+restart_service ssh
+
+log_info "Auto-deleted SSH trial: $USER"
+exit 0

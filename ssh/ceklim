@@ -1,0 +1,40 @@
+#!/bin/bash
+# ============================================================
+# ceklim - Cek User Multi Login SSH (log pelanggaran)
+# Lokasi: /usr/local/sbin/ceklim
+# ============================================================
+
+BASE="/usr/local/sbin/xyr"
+source "$BASE/lib/config.sh"
+source "$BASE/lib/common.sh"
+
+require_root
+
+clear
+print_line
+print_title "         LOG MULTI LOGIN SSH"
+print_line
+
+if [[ -f "$XYR_LOG/multilogin.log" && -s "$XYR_LOG/multilogin.log" ]]; then
+    echo ""
+    printf "%-20s %-8s %s\n" "WAKTU" "USER" "JUMLAH IP"
+    print_line
+    tail -n 50 "$XYR_LOG/multilogin.log" | while IFS='|' read -r ts user count; do
+        printf "%-20s %-8s %s\n" "$ts" "$user" "$count"
+    done
+    print_line
+else
+    print_info "Belum ada pelanggaran multi login"
+    print_info "Log akan muncul setelah cron autokill berjalan"
+fi
+
+print_line
+echo ""
+
+# ---------- Info user aktif sekarang ----------
+print_title "         LOGIN AKTIF SAAT INI (who)"
+print_line
+who 2>/dev/null || echo "  (tidak ada sesi)"
+print_line
+
+back_to_menu

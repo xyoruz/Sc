@@ -1,0 +1,71 @@
+#!/bin/bash
+# ============================================================
+# delssh - Delete SSH Account
+# Lokasi: /usr/local/sbin/delssh
+# ============================================================
+
+BASE="/usr/local/sbin/xyr"
+source "$BASE/lib/config.sh"
+source "$BASE/lib/common.sh"
+
+require_root
+acquire_lock "$LOCKFILE_DEL"
+
+print_header "DELETE SSH ACCOUNT"
+
+# ---------- List user SSH ----------
+print_info "Daftar user SSH:"
+echo ""
+printf "%-20s %-20s %s\n" "USERNAME" "EXPIRED" "STATUS"
+print_line
+
+while IFS=: read -r uname _ uid _; do
+    [[ "$uid" -lt 1000 ]] && continue
+    [[ "$uname" == "nobody" ]] && continue
+    exp=$(chage -l "$uname" 2>/dev/null | grep "Account expires" | cut -d: -f2 | xargs)
+    st=$(passwd -S "$uname" 2>/dev/null | awk '{print $2}')
+    [[ "$st" == "L" ]] && status="LOCKED" || status="AKTIF"
+    printf "%-20s %-20s %s\n" "$uname" "$exp" "$status"
+done < /etc/passwd
+
+print_line
+echo ""
+
+# ---------- Input ----------
+while :; do
+    read -rp "Masukkan username yang ingin dihapus (atau kosong untuk batal): " USER
+    [[ -z "$USER" ]] && { print_warn "Dibatalkan"; release_lock; back_to_menu; exit 0; }
+    if ! getent passwd "$USER" >/dev/null 2>&1; then
+        print_error "User $USER tidak ditemukan"
+        continue
+    fi
+
+    read -rp "Hapus user '$USER'? [y/N]: " c
+    if [[ "${c,,}" == "y" ]]; then
+        break
+    fi
+done
+
+# ---------- Hapus ----------
+userdel -f "$USER" >/dev/null 2>&1
+
+# ---------- Hapus dari DB ----------
+[[ -f "$DB_SSH" ]] && sed -i "/^#ssh# ${USER} /d" "$DB_SSH"
+rm -f "${QUOTA_DIR}/ssh/${USER}"
+rm -f "${LIMITIP_DIR}/ssh/${USER}"
+rm -f "${USAGE_DIR}/ssh/${USER}"
+rm -f "${LOCKED_DIR}/ssh/${USER}"
+rm -f "${NGINX_WEB}/ssh-${USER}.txt"
+
+# ---------- Reload service ----------
+restart_service ssh
+restart_service sshd
+restart_service dropbear
+
+# ---------- Log ----------
+log_info "SSH user deleted: $USER"
+
+print_ok "User $USER berhasil dihapus"
+
+release_lock
+back_to_menu

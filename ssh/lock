@@ -1,0 +1,59 @@
+#!/bin/bash
+# ============================================================
+# lock - Lock SSH User (kunci password, tidak bisa login)
+# Lokasi: /usr/local/sbin/lock
+# ============================================================
+
+BASE="/usr/local/sbin/xyr"
+source "$BASE/lib/config.sh"
+source "$BASE/lib/common.sh"
+
+require_root
+
+print_header "LOCK SSH ACCOUNT"
+
+# ---------- List user + status ----------
+printf "%-20s %-22s %s\n" "USERNAME" "EXPIRED" "STATUS"
+print_line
+
+while IFS=: read -r uname _ uid _; do
+    [[ "$uid" -lt 1000 ]] && continue
+    [[ "$uname" == "nobody" ]] && continue
+    exp=$(chage -l "$uname" 2>/dev/null | grep "Account expires" | cut -d: -f2 | xargs)
+    st=$(passwd -S "$uname" 2>/dev/null | awk '{print $2}')
+    [[ "$st" == "L" ]] && status="${C_RED}LOCKED${C_RESET}" || status="${C_GREEN}UNLOCKED${C_RESET}"
+    printf "%-20s %-22s %b\n" "$uname" "$exp" "$status"
+done < /etc/passwd
+print_line
+echo ""
+
+# ---------- Input ----------
+while :; do
+    read -rp "Username yang akan dikunci: " USER
+    [[ -z "$USER" ]] && { print_warn "Dibatalkan"; back_to_menu; exit 0; }
+    if ! getent passwd "$USER" >/dev/null 2>&1; then
+        print_error "User tidak ditemukan"
+        continue
+    fi
+    break
+done
+
+# ---------- Lock ----------
+passwd -l "$USER" >/dev/null 2>&1
+
+# ---------- Simpan status ke folder lock ----------
+mkdir -p "$LOCKED_DIR/ssh"
+echo "MANUAL|$(date +"%Y-%m-%d %H:%M:%S")|by-admin" > "$LOCKED_DIR/ssh/$USER"
+
+# ---------- Kill session aktif (opsional) ----------
+if command -v pkill >/dev/null 2>&1; then
+    pkill -KILL -u "$USER" 2>/dev/null || true
+fi
+
+# ---------- Reload ----------
+restart_service ssh
+
+log_info "SSH user locked: $USER"
+
+print_ok "User $USER berhasil di-LOCK"
+back_to_menu

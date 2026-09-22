@@ -1,0 +1,155 @@
+#!/bin/bash
+# ============================================================
+# addssh - Create SSH Account
+# Lokasi: /usr/local/sbin/addssh
+# ============================================================
+
+BASE="/usr/local/sbin/xyr"
+source "$BASE/lib/config.sh"
+source "$BASE/lib/common.sh"
+source "$BASE/lib/validate.sh"
+
+require_root
+acquire_lock "$LOCKFILE_ADD"
+
+print_header "CREATE SSH ACCOUNT"
+
+# ---------- Domain & Info Server ----------
+domain=$(get_domain)
+if [[ -z "$domain" ]]; then
+    print_error "Domain belum di-set. Gunakan menu AddHost."
+    release_lock
+    back_to_menu
+    exit 1
+fi
+
+ISP=$(cat /root/.info/.isp 2>/dev/null || echo "-")
+CITY=$(cat /root/.info/.city 2>/dev/null || echo "-")
+IP=$(get_my_ip)
+
+# ---------- Input ----------
+ask_username USER "Username"
+ask_password PASS "Password"
+ask_number IPLIMIT "Limit IP (0=tidak dibatasi)" 0 99 2
+ask_number QUOTA_GB "Limit Quota GB (0=tidak dibatasi)" 0 9999 0
+ask_number DAYS "Expired (hari)" 1 3650 30
+
+# ---------- Buat User Sistem ----------
+if getent passwd "$USER" >/dev/null 2>&1; then
+    print_error "User $USER sudah ada di sistem"
+    release_lock
+    back_to_menu
+    exit 1
+fi
+
+exp_date=$(date -d "$DAYS days" +"%Y-%m-%d")
+if ! useradd -e "$exp_date" -s /bin/false -M "$USER"; then
+    print_error "Gagal membuat user"
+    release_lock
+    back_to_menu
+    exit 1
+fi
+
+printf '%s\n%s\n' "$PASS" "$PASS" | passwd "$USER" &>/dev/null
+
+# ---------- Limit IP ----------
+if [[ "$IPLIMIT" -gt 0 ]]; then
+    echo "$IPLIMIT" > "$LIMITIP_DIR/ssh/$USER"
+fi
+
+# ---------- Limit Quota ----------
+if [[ "$QUOTA_GB" -gt 0 ]]; then
+    echo "$((QUOTA_GB * 1024 * 1024 * 1024))" > "$QUOTA_DIR/ssh/$USER"
+fi
+
+# ---------- Simpan ke DB ----------
+exp_display=$(date -d "$exp_date" +"%d %b, %Y")
+grep -qE "^#ssh# ${USER} " "$DB_SSH" 2>/dev/null && sed -i "/^#ssh# ${USER} /d" "$DB_SSH"
+echo "#ssh# ${USER} ${PASS} ${QUOTA_GB} ${IPLIMIT} ${exp_date}" >> "$DB_SSH"
+
+# ---------- Simpan info akun ke web ----------
+cat > "${NGINX_WEB}/ssh-${USER}.txt" <<-END
+=================================
+Format SSH OVPN Account
+=================================
+Username         : $USER
+Password         : $PASS
+=================================
+IP               : $IP
+Host             : $domain
+Port OpenSSH     : 443, 80, 22
+Port Dropbear    : 443, 109
+Port Dropbear WS : 443, 109
+Port SSH UDP     : 1-65535
+Port SSH WS      : 80, 8080, 8081-9999
+Port SSH SSL WS  : 443
+Port SSL/TLS     : 400-900
+Port OVPN WS SSL : 443
+Port OVPN SSL    : 443
+Port OVPN TCP    : 1194
+Port OVPN UDP    : 2200
+=================================
+SSH WS      : $domain:80@${USER}:${PASS}
+SSH SSL     : $domain:443@${USER}:${PASS}
+SSH UDP     : $domain:1-65535@${USER}:${PASS}
+=================================
+Limit IP       : $IPLIMIT device
+Limit Quota    : $QUOTA_GB GB
+Aktif Selama   : $DAYS Hari
+Dibuat Pada    : $(date +"%d %b, %Y")
+Berakhir Pada  : $exp_display
+=================================
+Payload WS :
+GET / HTTP/1.1[crlf]host: $domain[crlf]Upgrade: Websocket[crlf][crlf]
+=================================
+Payload WSS :
+GET wss://BUG.COM/ HTTP/1.1[crlf]Host: $domain[crlf]Upgrade: websocket[crlf][crlf]
+=================================
+Payload Enhanced :
+PATCH / HTTP/1.1[crlf]Host: $domain[crlf]Host: bug.com[crlf]Upgrade: websocket[crlf]Connection: Upgrade[crlf][crlf]
+=================================
+END
+
+chmod 644 "${NGINX_WEB}/ssh-${USER}.txt"
+
+# ---------- Reload service ----------
+restart_service ssh
+restart_service sshd
+restart_service dropbear
+
+# ---------- Log ----------
+log_info "SSH user created: $USER | expire: $exp_date | quota: ${QUOTA_GB}GB | iplimit: $IPLIMIT"
+
+# ---------- Output ke layar ----------
+clear
+{
+    print_line
+    print_title "    SSH ACCOUNT BERHASIL DIBUAT"
+    print_line
+    echo "Username      : $USER"
+    echo "Password      : $PASS"
+    echo "Limit IP      : $IPLIMIT device"
+    echo "Limit Quota   : $QUOTA_GB GB"
+    print_line
+    echo "Host          : $domain"
+    echo "IP VPS        : $IP"
+    echo "ISP           : $ISP"
+    echo "Kota          : $CITY"
+    print_line
+    echo "Port OpenSSH  : 22, 80, 443"
+    echo "Port Dropbear : 109, 143"
+    echo "Port SSH WS   : 80, 8080, 8880, 2082"
+    echo "Port SSH TLS  : 443, 8443"
+    echo "Port OVPN TCP : 1194"
+    echo "Port OVPN UDP : 2200"
+    print_line
+    echo "Aktif Selama  : $DAYS Hari"
+    echo "Dibuat Pada   : $(date +"%d %b, %Y")"
+    echo "Berakhir Pada : $exp_display"
+    print_line
+    echo "Save Link     : http://$domain:81/ssh-${USER}.txt"
+    print_line
+} | tee -a "$XYR_LOG/create-ssh.log"
+
+release_lock
+back_to_menu

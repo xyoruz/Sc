@@ -1,0 +1,76 @@
+#!/bin/bash
+# ============================================================
+# renewssh - Renew SSH Account (perpanjang expired)
+# Lokasi: /usr/local/sbin/renewssh
+# ============================================================
+
+BASE="/usr/local/sbin/xyr"
+source "$BASE/lib/config.sh"
+source "$BASE/lib/common.sh"
+source "$BASE/lib/validate.sh"
+
+require_root
+
+print_header "RENEW SSH ACCOUNT"
+
+# ---------- List user ----------
+print_info "Daftar user SSH:"
+echo ""
+while IFS=: read -r uname _ uid _; do
+    [[ "$uid" -lt 1000 ]] && continue
+    [[ "$uname" == "nobody" ]] && continue
+    exp=$(chage -l "$uname" 2>/dev/null | grep "Account expires" | cut -d: -f2 | xargs)
+    echo "  - $uname (expired: $exp)"
+done < /etc/passwd
+echo ""
+
+# ---------- Input ----------
+while :; do
+    read -rp "Username: " USER
+    if ! getent passwd "$USER" >/dev/null 2>&1; then
+        print_error "User tidak ditemukan"
+        continue
+    fi
+    break
+done
+
+ask_number DAYS "Tambah berapa hari" 1 3650 30
+
+# ---------- Hitung tanggal baru ----------
+old_exp=$(chage -l "$USER" 2>/dev/null | grep "Account expires" | cut -d: -f2 | xargs)
+old_exp_ts=$(date -d "$old_exp" +%s 2>/dev/null || echo 0)
+now_ts=$(date +%s)
+
+# Kalau sudah expired atau exp tidak valid, pakai tanggal sekarang
+if [[ "$old_exp_ts" -le "$now_ts" ]]; then
+    base_ts=$now_ts
+else
+    base_ts=$old_exp_ts
+fi
+
+new_exp_ts=$((base_ts + DAYS * 86400))
+new_exp_date=$(date -d "@$new_exp_ts" +"%Y-%m-%d")
+new_exp_display=$(date -d "@$new_exp_ts" +"%d %b, %Y")
+
+# ---------- Update user ----------
+chage -E "$new_exp_date" "$USER"
+
+# ---------- Update DB ----------
+if [[ -f "$DB_SSH" ]] && grep -qE "^#ssh# ${USER} " "$DB_SSH"; then
+    sed -i "s|^#ssh# ${USER} .*|#ssh# ${USER} X X X ${new_exp_date}|" "$DB_SSH" 2>/dev/null
+    # Lebih aman: baca dulu, tulis ulang
+    old_line=$(grep -E "^#ssh# ${USER} " "$DB_SSH")
+    pass=$(echo "$old_line" | awk '{print $3}')
+    quota=$(echo "$old_line" | awk '{print $4}')
+    ipl=$(echo "$old_line" | awk '{print $5}')
+    sed -i "/^#ssh# ${USER} /d" "$DB_SSH"
+    echo "#ssh# ${USER} ${pass} ${quota} ${ipl} ${new_exp_date}" >> "$DB_SSH"
+fi
+
+# ---------- Reload ----------
+restart_service ssh
+
+log_info "SSH user renewed: $USER -> $new_exp_date"
+
+print_ok "User $USER diperpanjang sampai $new_exp_display"
+back_to_menu

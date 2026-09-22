@@ -1,0 +1,83 @@
+#!/bin/bash
+# ============================================================
+# tendang - Kill multi-login SSH user
+# Lokasi: /usr/local/sbin/tendang
+# ============================================================
+
+BASE="/usr/local/sbin/xyr"
+source "$BASE/lib/config.sh"
+source "$BASE/lib/common.sh"
+
+# Batas default dari argumen
+DEFAULT_MAX="${1:-1}"
+
+# ---------- Deteksi log ----------
+LOG=""
+[[ -f /var/log/auth.log ]] && LOG="/var/log/auth.log"
+[[ -f /var/log/secure   ]] && LOG="/var/log/secure"
+[[ -z "$LOG" ]] && exit 0
+
+# ---------- Cek autolock ----------
+AUTOLOCK_ON=0
+autolock_enabled && AUTOLOCK_ON=1
+
+# ---------- Kumpulkan session ----------
+declare -A USER_IPS   # user -> daftar IP (space-separated)
+declare -A USER_PIDS  # user -> daftar PID
+
+# Dropbear
+grep -i dropbear "$LOG" 2>/dev/null | grep -i "Password auth succeeded" > /tmp/tendang-db.txt
+while read -r line; do
+    pid=$(echo "$line" | grep -oE "dropbear\[[0-9]+\]" | grep -oE "[0-9]+")
+    user=$(echo "$line" | awk '{print $10}')
+    ip=$(echo "$line" | awk '{print $12}')
+    [[ -z "$user" || -z "$ip" ]] && continue
+    USER_IPS["$user"]+="$ip "
+    USER_PIDS["$user"]+="$pid "
+done < /tmp/tendang-db.txt
+rm -f /tmp/tendang-db.txt
+
+# SSH
+grep -i sshd "$LOG" 2>/dev/null | grep -i "Accepted password for" > /tmp/tendang-sshd.txt
+while read -r line; do
+    pid=$(echo "$line" | grep -oE "sshd\[[0-9]+\]" | grep -oE "[0-9]+")
+    user=$(echo "$line" | awk '{print $9}')
+    ip=$(echo "$line" | awk '{print $11}')
+    [[ -z "$user" || -z "$ip" ]] && continue
+    USER_IPS["$user"]+="$ip "
+    USER_PIDS["$user"]+="$pid "
+done < /tmp/tendang-sshd.txt
+rm -f /tmp/tendang-sshd.txt
+
+# ---------- Cek tiap user ----------
+for user in "${!USER_IPS[@]}"; do
+    # Hitung IP unik
+    ips=$(echo "${USER_IPS[$user]}" | tr ' ' '\n' | sort -u | grep -v '^$')
+    count=$(echo "$ips" | wc -l)
+
+    # Limit per user (kalau ada) atau default
+    if [[ -f "$LIMITIP_DIR/ssh/$user" ]]; then
+        max=$(cat "$LIMITIP_DIR/ssh/$user")
+    else
+        max="$DEFAULT_MAX"
+    fi
+
+    if [[ "$count" -gt "$max" ]]; then
+        # Log pelanggaran
+        echo "$(date +"%Y-%m-%d %H:%M:%S")|$user|$count" >> "$XYR_LOG/multilogin.log"
+        log_warn "Multi-login: $user ($count IP > $max)"
+
+        # Kalau autolock ON -> lock user
+        if [[ "$AUTOLOCK_ON" -eq 1 ]]; then
+            passwd -l "$user" >/dev/null 2>&1
+            mkdir -p "$LOCKED_DIR/ssh"
+            echo "AUTO|$(date +"%Y-%m-%d %H:%M:%S")|IP:$count>$max" > "$LOCKED_DIR/ssh/$user"
+            log_info "Auto-locked SSH: $user"
+        fi
+
+        # Kill semua PID user ini
+        pkill -KILL -u "$user" 2>/dev/null || true
+    fi
+done
+
+exit 0

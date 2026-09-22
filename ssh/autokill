@@ -1,0 +1,64 @@
+#!/bin/bash
+# ============================================================
+# autokill - Auto Kill Multi Login SSH (via cron)
+# Lokasi: /usr/local/sbin/autokill
+# ============================================================
+
+BASE="/usr/local/sbin/xyr"
+source "$BASE/lib/config.sh"
+source "$BASE/lib/common.sh"
+
+require_root
+
+# ---------- Cek status cron ----------
+CRON_FILE="/etc/cron.d/xyr-autokill-ssh"
+
+if [[ -f "$CRON_FILE" ]]; then
+    STATUS="${C_GREEN}AKTIF${C_RESET}"
+else
+    STATUS="${C_RED}MATI${C_RESET}"
+fi
+
+clear
+print_line
+print_title "           AUTO-KILL MULTI LOGIN SSH"
+print_line
+echo "  Status: $STATUS"
+print_line
+echo ""
+echo "   ${C_YELLOW}[1]${C_RESET}  Aktifkan AutoKill (1 menit)"
+echo "   ${C_YELLOW}[2]${C_RESET}  Aktifkan AutoKill (2 menit)"
+echo "   ${C_YELLOW}[3]${C_RESET}  Aktifkan AutoKill (3 menit)"
+echo "   ${C_YELLOW}[4]${C_RESET}  Matikan AutoKill"
+echo ""
+echo "   ${C_RED}[0]${C_RESET}  Kembali"
+echo ""
+print_line
+read -rp "   Pilih [1-4 atau 0]: " opt
+
+case "$opt" in
+    1|2|3)
+        print_info "AutoKill akan memakai batas IP dari file: $LIMITIP_DIR/ssh/<user>"
+        echo ""
+        read -rp "Max multi-login default (untuk user tanpa limit): " MAX
+        [[ -z "$MAX" || ! "$MAX" =~ ^[0-9]+$ ]] && MAX=1
+
+        cat > "$CRON_FILE" <<-END
+# AutoKill SSH - cek tiap $opt menit
+*/$opt * * * * root /usr/local/sbin/tendang $MAX >/dev/null 2>&1
+END
+        chmod 644 "$CRON_FILE"
+        systemctl restart cron >/dev/null 2>&1
+
+        print_ok "AutoKill aktif (interval $opt menit, max $MAX login)"
+        ;;
+    4)
+        rm -f "$CRON_FILE"
+        systemctl restart cron >/dev/null 2>&1
+        print_ok "AutoKill dimatikan"
+        ;;
+    0) back_to_menu; exit 0 ;;
+    *) autokill ;;
+esac
+
+back_to_menu

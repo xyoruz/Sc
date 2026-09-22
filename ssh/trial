@@ -1,0 +1,103 @@
+#!/bin/bash
+# ============================================================
+# trial - Create Trial SSH Account (durasi menit)
+# Lokasi: /usr/local/sbin/trial
+# ============================================================
+
+BASE="/usr/local/sbin/xyr"
+source "$BASE/lib/config.sh"
+source "$BASE/lib/common.sh"
+source "$BASE/lib/validate.sh"
+
+require_root
+
+print_header "TRIAL SSH ACCOUNT"
+
+domain=$(get_domain)
+[[ -z "$domain" ]] && { print_error "Domain belum di-set"; back_to_menu; exit 1; }
+
+IP=$(get_my_ip)
+
+# ---------- Input durasi ----------
+ask_number MINUTES "Durasi trial (menit)" 1 1440 60
+
+# ---------- Generate username & password ----------
+USER="trial$(tr -dc 0-9 </dev/urandom | head -c5)"
+PASS="trial$(tr -dc 0-9 </dev/urandom | head -c5)"
+
+# ---------- Buat user dengan shell /bin/false ----------
+exp_date=$(date -d "+1 day" +"%Y-%m-%d")
+
+if ! useradd -e "$exp_date" -s /bin/false -M "$USER"; then
+    print_error "Gagal membuat user trial"
+    back_to_menu
+    exit 1
+fi
+
+printf '%s\n%s\n' "$PASS" "$PASS" | passwd "$USER" &>/dev/null
+
+# ---------- Simpan ke DB ----------
+echo "#ssh# ${USER} ${PASS} 0 1 ${exp_date}" >> "$DB_SSH"
+
+# ---------- Jadwalkan penghapusan via at ----------
+if command -v at >/dev/null 2>&1; then
+    echo "delssh-auto ${USER}" | at now +"$MINUTES" minutes 2>/dev/null || \
+    echo "/usr/local/sbin/delssh-auto ${USER}" | at now +"$MINUTES" minutes 2>/dev/null || \
+    print_warn "Gagal jadwalkan auto-delete. Hapus manual setelah $MINUTES menit."
+else
+    # Fallback: pakai cron sekali jalan
+    cat > /etc/cron.d/xyr-trial-ssh-${USER} <<-END
+$(date -d "+$MINUTES minutes" +"%M %H %d %m") * root /usr/local/sbin/delssh-auto ${USER} && rm -f /etc/cron.d/xyr-trial-ssh-${USER}
+END
+    print_info "Auto-delete via cron (at tidak tersedia)"
+fi
+
+# ---------- File web ----------
+cat > "${NGINX_WEB}/ssh-${USER}.txt" <<-END
+=================================
+TRIAL SSH ACCOUNT
+=================================
+Username         : $USER
+Password         : $PASS
+=================================
+Host             : $domain
+IP               : $IP
+=================================
+Port OpenSSH     : 22, 80, 443
+Port Dropbear    : 109, 143
+Port SSH WS      : 80, 8080
+Port SSH TLS     : 443, 8443
+=================================
+Durasi           : $MINUTES menit
+Dibuat           : $(date +"%d %b, %Y %H:%M")
+=================================
+END
+
+chmod 644 "${NGINX_WEB}/ssh-${USER}.txt"
+
+# ---------- Reload ----------
+restart_service ssh
+
+log_info "Trial SSH created: $USER (${MINUTES} menit)"
+
+# ---------- Output ----------
+clear
+print_line
+print_title "        TRIAL SSH BERHASIL DIBUAT"
+print_line
+echo "Username   : $USER"
+echo "Password   : $PASS"
+echo "Durasi     : $MINUTES menit"
+print_line
+echo "Host       : $domain"
+echo "IP VPS     : $IP"
+print_line
+echo "Port SSH   : 22, 80, 443"
+echo "Port DB    : 109, 143"
+print_line
+echo "Link       : http://$domain:81/ssh-${USER}.txt"
+print_line
+print_warn "Akun akan dihapus otomatis setelah $MINUTES menit"
+print_line
+
+back_to_menu
