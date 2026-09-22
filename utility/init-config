@@ -1,0 +1,116 @@
+#!/bin/bash
+# ============================================================
+# init-config - Inisialisasi xray-config.json
+# Lokasi: /usr/local/sbin/init-config
+# Ganti tag #vmess, #vless, dll dengan user dummy anchor
+# ============================================================
+
+BASE="/usr/local/sbin/xyr"
+source "$BASE/lib/config.sh"
+source "$BASE/lib/common.sh"
+
+require_root
+
+print_header "INISIALISASI XRAY CONFIG"
+
+if [[ ! -f "$XRAY_CONF" ]]; then
+    print_error "File $XRAY_CONF tidak ditemukan"
+    back_to_menu
+    exit 1
+fi
+
+# ---------- Backup ----------
+cp -f "$XRAY_CONF" "${XRAY_CONF}.orig"
+print_info "Backup: ${XRAY_CONF}.orig"
+
+# ---------- Cek apakah sudah ada dummy ----------
+if grep -q '"email": "dummy"' "$XRAY_CONF" 2>/dev/null; then
+    print_warn "Config sudah punya user dummy. Skip."
+    back_to_menu
+    exit 0
+fi
+
+# ---------- Ganti tag dengan user dummy ----------
+DUMMY_ID="00000000-0000-0000-0000-000000000000"
+
+replace_tag() {
+    local tag="$1"
+    local dummy_json="$2"
+    local file="$3"
+
+    if ! grep -q "^${tag}[[:space:]]*$" "$file" 2>/dev/null; then
+        print_warn "Tag $tag tidak ditemukan"
+        return 1
+    fi
+
+    sed -i "s|^${tag}[[:space:]]*$|${dummy_json}|" "$file"
+    print_ok "Tag $tag -> user dummy"
+}
+
+replace_tag "#vmess" \
+    "{\"id\": \"${DUMMY_ID}\", \"alterId\": 0, \"email\": \"dummy\"}" \
+    "$XRAY_CONF"
+
+replace_tag "#vmessgrpc" \
+    "{\"id\": \"${DUMMY_ID}\", \"alterId\": 0, \"email\": \"dummy\"}" \
+    "$XRAY_CONF"
+
+replace_tag "#vless" \
+    "{\"id\": \"${DUMMY_ID}\", \"email\": \"dummy\"}" \
+    "$XRAY_CONF"
+
+replace_tag "#vlessgrpc" \
+    "{\"id\": \"${DUMMY_ID}\", \"email\": \"dummy\"}" \
+    "$XRAY_CONF"
+
+replace_tag "#trojanws" \
+    "{\"password\": \"${DUMMY_ID}\", \"email\": \"dummy\"}" \
+    "$XRAY_CONF"
+
+replace_tag "#trojangrpc" \
+    "{\"password\": \"${DUMMY_ID}\", \"email\": \"dummy\"}" \
+    "$XRAY_CONF"
+
+replace_tag "#ssws" \
+    "{\"method\": \"aes-128-gcm\", \"password\": \"${DUMMY_ID}\", \"email\": \"dummy\"}" \
+    "$XRAY_CONF"
+
+replace_tag "#ssgrpc" \
+    "{\"method\": \"aes-128-gcm\", \"password\": \"${DUMMY_ID}\", \"email\": \"dummy\"}" \
+    "$XRAY_CONF"
+
+# ---------- Fix trailing comma ----------
+sed -i 's/,\(\s*\)\]/\1]/g' "$XRAY_CONF"
+sed -i 's/,\(\s*\)}/\1}/g' "$XRAY_CONF"
+
+# ---------- Validasi JSON ----------
+if ! jq . "$XRAY_CONF" > /dev/null 2>&1; then
+    print_error "JSON tidak valid. Rollback."
+    mv -f "${XRAY_CONF}.orig" "$XRAY_CONF"
+    back_to_menu
+    exit 1
+fi
+
+print_ok "JSON valid"
+
+# ---------- Test Xray ----------
+if command -v xray >/dev/null 2>&1; then
+    if xray -test -config "$XRAY_CONF" > /dev/null 2>&1; then
+        print_ok "Config Xray OK"
+    else
+        print_error "Config Xray gagal test. Rollback."
+        xray -test -config "$XRAY_CONF"
+        mv -f "${XRAY_CONF}.orig" "$XRAY_CONF"
+        back_to_menu
+        exit 1
+    fi
+fi
+
+# ---------- Restart Xray ----------
+restart_service xray
+
+log_info "init-config done"
+print_ok "Config berhasil diinisialisasi dengan user dummy"
+print_info "User dummy adalah anchor — JANGAN dihapus manual"
+
+back_to_menu
