@@ -1,0 +1,36 @@
+#!/bin/bash
+# ============================================================
+# healthcheck - Cek & restart service yang mati
+# Lokasi: /usr/local/sbin/healthcheck
+# Dijalankan oleh cron tiap 10 menit
+# ============================================================
+
+BASE="/usr/local/sbin/xyr"
+source "$BASE/lib/config.sh"
+source "$BASE/lib/common.sh"
+
+SERVICES=("xray" "nginx" "ssh" "dropbear" "cron" "fail2ban" "vnstat")
+
+for svc in "${SERVICES[@]}"; do
+    if ! service_exists "$svc"; then
+        continue
+    fi
+
+    if ! is_service_active "$svc"; then
+        log_warn "Service $svc mati. Restart..."
+        systemctl restart "$svc" >/dev/null 2>&1
+        sleep 1
+        if is_service_active "$svc"; then
+            log_info "Service $svc berhasil di-restart"
+        else
+            log_error "Service $svc gagal di-restart"
+        fi
+    fi
+done
+
+# Cek konektivitas internet
+if ! curl -sS --max-time 5 https://1.1.1.1 >/dev/null 2>&1; then
+    log_warn "Tidak ada koneksi internet"
+fi
+
+exit 0

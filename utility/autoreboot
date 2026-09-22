@@ -1,0 +1,52 @@
+#!/bin/bash
+# ============================================================
+# autoreboot - Scheduler reboot otomatis
+# Lokasi: /usr/local/sbin/autoreboot
+# ============================================================
+
+BASE="/usr/local/sbin/xyr"
+source "$BASE/lib/config.sh"
+source "$BASE/lib/common.sh"
+
+require_root
+
+CRON_FILE="/etc/cron.d/xyr-autoreboot"
+[[ -f "$CRON_FILE" ]] && STATUS="${C_GREEN}AKTIF${C_RESET}" || STATUS="${C_RED}MATI${C_RESET}"
+
+clear
+print_line
+print_title "           AUTO REBOOT SCHEDULER"
+print_line
+echo "  Status: $STATUS"
+[[ -f "$CRON_FILE" ]] && { echo "  Jadwal:"; cat "$CRON_FILE" | grep -v "^#"; }
+print_line
+echo ""
+echo "   ${C_YELLOW}[1]${C_RESET}  Reboot tiap 1 jam"
+echo "   ${C_YELLOW}[2]${C_RESET}  Reboot tiap 6 jam"
+echo "   ${C_YELLOW}[3]${C_RESET}  Reboot tiap 12 jam"
+echo "   ${C_YELLOW}[4]${C_RESET}  Reboot tiap 1 hari"
+echo "   ${C_YELLOW}[5]${C_RESET}  Reboot tiap 1 minggu"
+echo "   ${C_YELLOW}[6]${C_RESET}  Matikan auto-reboot"
+echo "   ${C_YELLOW}[7]${C_RESET}  Lihat log reboot"
+echo ""
+echo "   ${C_RED}[0]${C_RESET}  Kembali"
+echo ""
+print_line
+read -rp "   Pilih [1-7 atau 0]: " opt
+
+case "$opt" in
+    1)  echo "0 * * * * root /sbin/reboot" > "$CRON_FILE" ;;
+    2)  echo "0 */6 * * * root /sbin/reboot" > "$CRON_FILE" ;;
+    3)  echo "0 */12 * * * root /sbin/reboot" > "$CRON_FILE" ;;
+    4)  echo "0 3 * * * root /sbin/reboot" > "$CRON_FILE" ;;
+    5)  echo "0 3 * * 0 root /sbin/reboot" > "$CRON_FILE" ;;
+    6)  rm -f "$CRON_FILE"; print_ok "Auto-reboot dimatikan"; back_to_menu; exit 0 ;;
+    7)  if [[ -f /var/log/reboot.log ]]; then less /var/log/reboot.log; else print_info "Belum ada log"; fi; back_to_menu; exit 0 ;;
+    0)  back_to_menu; exit 0 ;;
+    *)  autoreboot ;;
+esac
+
+chmod 644 "$CRON_FILE"
+systemctl restart cron >/dev/null 2>&1
+print_ok "Auto-reboot diatur"
+back_to_menu

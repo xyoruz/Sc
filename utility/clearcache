@@ -1,0 +1,27 @@
+#!/bin/bash
+# ============================================================
+# clearcache - Bersihkan RAM cache
+# Lokasi: /usr/local/sbin/clearcache
+# ============================================================
+
+BASE="/usr/local/sbin/xyr"
+source "$BASE/lib/config.sh"
+source "$BASE/lib/common.sh"
+
+require_root
+
+print_header "CLEAR CACHE RAM"
+
+before=$(free -m | awk '/Mem:/ {print $3}')
+echo "  RAM terpakai sebelum : ${before} MB"
+
+sync
+echo 1 > /proc/sys/vm/drop_caches
+
+sleep 1
+after=$(free -m | awk '/Mem:/ {print $3}')
+echo "  RAM terpakai sesudah : ${after} MB"
+
+log_info "Clear cache: ${before}MB -> ${after}MB"
+print_ok "Cache dibersihkan"
+back_to_menu

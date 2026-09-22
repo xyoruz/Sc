@@ -1,0 +1,32 @@
+#!/bin/bash
+# ============================================================
+# speedtest - Test kecepatan internet server
+# Lokasi: /usr/local/sbin/speedtest
+# ============================================================
+
+BASE="/usr/local/sbin/xyr"
+source "$BASE/lib/config.sh"
+source "$BASE/lib/common.sh"
+
+clear
+print_line
+print_title "           SPEEDTEST"
+print_line
+echo ""
+
+if command -v speedtest-cli >/dev/null 2>&1; then
+    speedtest-cli --simple
+elif command -v speedtest >/dev/null 2>&1; then
+    speedtest
+else
+    print_warn "speedtest-cli belum terinstall. Install..."
+    apt-get install -y speedtest-cli >/dev/null 2>&1
+    if command -v speedtest-cli >/dev/null 2>&1; then
+        speedtest-cli --simple
+    else
+        print_error "Gagal install speedtest"
+    fi
+fi
+
+print_line
+back_to_menu

@@ -1,0 +1,56 @@
+#!/bin/bash
+# ============================================================
+# del-auto - Hapus user otomatis (dipanggil trial via at)
+# Lokasi: /usr/local/sbin/del-auto
+# Usage : del-auto <vmess|vless|trojan|ss|ssh> <username>
+# ============================================================
+
+BASE="/usr/local/sbin/xyr"
+source "$BASE/lib/config.sh"
+source "$BASE/lib/common.sh"
+source "$BASE/lib/xray-helper.sh"
+
+SVC="$1"
+USER="$2"
+[[ -z "$SVC" || -z "$USER" ]] && exit 1
+
+case "$SVC" in
+    vmess)
+        xray_backup_config
+        xray_del_user "$PREFIX_VMESS" "$USER"
+        xray_apply
+        db_del_user "$DB_VMESS" "$PREFIX_VMESS" "$USER"
+        rm -f "${QUOTA_DIR}/vmess/${USER}" "${LIMITIP_DIR}/vmess/${USER}" "${USAGE_DIR}/vmess/${USER}" "${LOCKED_DIR}/vmess/${USER}" "${NGINX_WEB}/vmess-${USER}.txt"
+        ;;
+    vless)
+        xray_backup_config
+        xray_del_user "$PREFIX_VLESS" "$USER"
+        xray_apply
+        db_del_user "$DB_VLESS" "$PREFIX_VLESS" "$USER"
+        rm -f "${QUOTA_DIR}/vless/${USER}" "${LIMITIP_DIR}/vless/${USER}" "${USAGE_DIR}/vless/${USER}" "${LOCKED_DIR}/vless/${USER}" "${NGINX_WEB}/vless-${USER}.txt"
+        ;;
+    trojan)
+        xray_backup_config
+        xray_del_user "$PREFIX_TROJAN" "$USER"
+        xray_apply
+        db_del_user "$DB_TROJAN" "$PREFIX_TROJAN" "$USER"
+        rm -f "${QUOTA_DIR}/trojan/${USER}" "${LIMITIP_DIR}/trojan/${USER}" "${USAGE_DIR}/trojan/${USER}" "${LOCKED_DIR}/trojan/${USER}" "${NGINX_WEB}/trojan-${USER}.txt"
+        ;;
+    ss)
+        xray_backup_config
+        xray_del_user "$PREFIX_SS" "$USER"
+        xray_apply
+        db_del_user "$DB_SS" "$PREFIX_SS" "$USER"
+        rm -f "${QUOTA_DIR}/ss/${USER}" "${LIMITIP_DIR}/ss/${USER}" "${USAGE_DIR}/ss/${USER}" "${LOCKED_DIR}/ss/${USER}" "${NGINX_WEB}/sodosokws-${USER}.txt" "${NGINX_WEB}/sodosokgrpc-${USER}.txt"
+        ;;
+    ssh)
+        getent passwd "$USER" >/dev/null 2>&1 && userdel -f "$USER" >/dev/null 2>&1
+        db_del_user "$DB_SSH" "$PREFIX_SSH" "$USER"
+        rm -f "${QUOTA_DIR}/ssh/${USER}" "${LIMITIP_DIR}/ssh/${USER}" "${USAGE_DIR}/ssh/${USER}" "${LOCKED_DIR}/ssh/${USER}" "${NGINX_WEB}/ssh-${USER}.txt"
+        restart_service ssh
+        ;;
+    *) exit 1 ;;
+esac
+
+log_info "Auto-deleted $SVC user: $USER"
+exit 0

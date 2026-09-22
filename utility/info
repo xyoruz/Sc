@@ -1,0 +1,41 @@
+#!/bin/bash
+# ============================================================
+# info - Info server
+# Lokasi: /usr/local/sbin/info
+# ============================================================
+
+BASE="/usr/local/sbin/xyr"
+source "$BASE/lib/config.sh"
+source "$BASE/lib/common.sh"
+
+IP=$(get_my_ip)
+DOMAIN=$(get_domain)
+[[ -z "$DOMAIN" ]] && DOMAIN="(belum di-set)"
+OS=$(grep PRETTY_NAME /etc/os-release | cut -d'"' -f2)
+KERNEL=$(uname -r)
+CPU=$(grep -m1 "model name" /proc/cpuinfo | cut -d: -f2 | xargs)
+CORES=$(nproc)
+RAM=$(free -m | awk '/Mem:/ {print $2}')
+RAM_USED=$(free -m | awk '/Mem:/ {print $3}')
+DISK=$(df -h / | awk 'NR==2 {print $2}')
+DISK_USED=$(df -h / | awk 'NR==2 {print $3}')
+UPTIME=$(uptime -p | sed 's/up //')
+LOAD=$(uptime | awk -F'load average:' '{print $2}')
+
+clear
+print_line
+print_title "           INFORMASI SERVER"
+print_line
+cat <<EOF
+  ${C_CYAN}OS${C_RESET}       : $OS
+  ${C_CYAN}Kernel${C_RESET}   : $KERNEL
+  ${C_CYAN}CPU${C_RESET}      : $CPU ($CORES core)
+  ${C_CYAN}RAM${C_RESET}      : ${RAM_USED}MB / ${RAM}MB
+  ${C_CYAN}Disk${C_RESET}     : $DISK_USED / $DISK
+  ${C_CYAN}Uptime${C_RESET}   : $UPTIME
+  ${C_CYAN}Load${C_RESET}     : $LOAD
+  ${C_CYAN}IP VPS${C_RESET}   : $IP
+  ${C_CYAN}Domain${C_RESET}   : $DOMAIN
+EOF
+print_line
+back_to_menu

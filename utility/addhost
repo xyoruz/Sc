@@ -1,0 +1,71 @@
+#!/bin/bash
+# ============================================================
+# addhost - Setting domain + SSL acme.sh
+# Lokasi: /usr/local/sbin/addhost
+# ============================================================
+
+BASE="/usr/local/sbin/xyr"
+source "$BASE/lib/config.sh"
+source "$BASE/lib/common.sh"
+source "$BASE/lib/validate.sh"
+
+require_root
+
+print_header "SETTING DOMAIN + SSL"
+
+# ---------- Info ----------
+print_warn "Sebelum lanjut, pastikan domain sudah di-pointing ke IP VPS ini."
+IP=$(get_my_ip)
+echo "  IP VPS : $IP"
+echo ""
+
+# ---------- Input domain ----------
+ask_domain NEW_DOMAIN "Masukkan domain"
+
+read -rp "Pasang SSL sekarang? (y/N): " do_ssl
+[[ "${do_ssl,,}" != "y" ]] && do_ssl="n"
+
+# ---------- Simpan domain ----------
+mkdir -p /etc/xray
+echo "$NEW_DOMAIN" > "$XRAY_DOMAIN"
+echo "$NEW_DOMAIN" > /root/domain
+mkdir -p /var/lib/kyt
+echo "IP=$NEW_DOMAIN" > /var/lib/kyt/ipvps.conf
+
+print_ok "Domain disimpan: $NEW_DOMAIN"
+
+# ---------- SSL ----------
+if [[ "$do_ssl" == "y" ]]; then
+    print_step "Pasang SSL Let's Encrypt"
+
+    # Install acme.sh kalau belum
+    if [[ ! -f /root/.acme.sh/acme.sh ]]; then
+        curl -sSL https://get.acme.sh | sh -s email=admin@"$NEW_DOMAIN" >/dev/null 2>&1 || \
+        { print_error "Gagal install acme.sh"; back_to_menu; exit 1; }
+    fi
+
+    # Stop service yang pakai port 80
+    systemctl stop nginx 2>/dev/null
+    systemctl stop haproxy 2>/dev/null
+
+    # Issue
+    /root/.acme.sh/acme.sh --set-default-ca --server letsencrypt >/dev/null 2>&1
+    if /root/.acme.sh/acme.sh --issue -d "$NEW_DOMAIN" --standalone -k ec-256; then
+        /root/.acme.sh/acme.sh --installcert -d "$NEW_DOMAIN" \
+            --fullchainpath /etc/xray/xray.crt \
+            --keypath /etc/xray/xray.key --ecc
+        chmod 644 /etc/xray/xray.crt
+        chmod 600 /etc/xray/xray.key
+        print_ok "SSL berhasil dipasang"
+    else
+        print_error "SSL gagal. Cek pointing domain."
+    fi
+
+    # Start ulang
+    systemctl restart nginx 2>/dev/null
+    systemctl restart haproxy 2>/dev/null
+    restart_service xray
+fi
+
+log_info "Domain updated: $NEW_DOMAIN"
+back_to_menu

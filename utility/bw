@@ -1,0 +1,43 @@
+#!/bin/bash
+# ============================================================
+# bw - Bandwidth monitor (vnstat)
+# Lokasi: /usr/local/sbin/bw
+# ============================================================
+
+BASE="/usr/local/sbin/xyr"
+source "$BASE/lib/config.sh"
+source "$BASE/lib/common.sh"
+
+clear
+print_line
+print_title "           BANDWIDTH MONITOR"
+print_line
+echo ""
+
+if ! command -v vnstat >/dev/null 2>&1; then
+    print_error "vnstat belum terinstall"
+    back_to_menu; exit 1
+fi
+
+echo "   ${C_YELLOW}[1]${C_RESET}  Ringkasan total"
+echo "   ${C_YELLOW}[2]${C_RESET}  Per jam"
+echo "   ${C_YELLOW}[3]${C_RESET}  Per hari"
+echo "   ${C_YELLOW}[4]${C_RESET}  Per bulan"
+echo "   ${C_YELLOW}[5]${C_RESET}  Live traffic"
+echo ""
+echo "   ${C_RED}[0]${C_RESET}  Kembali"
+print_line
+read -rp "   Pilih: " opt
+
+case "$opt" in
+    1) clear; vnstat ;;
+    2) clear; vnstat -h ;;
+    3) clear; vnstat -d ;;
+    4) clear; vnstat -m ;;
+    5) clear; vnstat -l ;;
+    0) back_to_menu; exit 0 ;;
+    *) bw ;;
+esac
+
+echo ""
+back_to_menu

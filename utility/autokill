@@ -1,0 +1,8 @@
+#!/bin/bash
+# ============================================================
+# autokill - Alias untuk autokill SSH (kompatibilitas menu)
+# Lokasi: /usr/local/sbin/autokill
+# ============================================================
+
+# Panggil autokill versi SSH
+exec /usr/local/sbin/autokill-ssh "$@"

@@ -1,0 +1,44 @@
+#!/bin/bash
+# ============================================================
+# prot - Info port & service
+# Lokasi: /usr/local/sbin/prot
+# ============================================================
+
+BASE="/usr/local/sbin/xyr"
+source "$BASE/lib/config.sh"
+source "$BASE/lib/common.sh"
+
+clear
+print_line
+print_title "           PORT & SERVICE INFO"
+print_line
+cat <<EOF
+   ${C_CYAN}SSH / OpenVPN${C_RESET}
+     - OpenSSH        : 22, 80, 443
+     - Dropbear       : 109, 143, 443
+     - SSH WS         : 80, 8080, 8880, 2082
+     - SSH WSS        : 443, 8443, 2053, 2083
+     - OVPN TCP       : 1194
+     - OVPN UDP       : 2200
+     - BadVPN UDP     : 7100, 7200, 7300
+
+   ${C_CYAN}Xray${C_RESET}
+     - Vmess WS TLS   : 443
+     - Vmess WS NTLS  : 80, 8080
+     - Vmess gRPC     : 443
+     - Vless WS TLS   : 443
+     - Vless gRPC     : 443
+     - Trojan WS      : 443
+     - Trojan gRPC    : 443
+     - Shadowsocks WS : 443
+     - Shadowsocks gRPC: 443
+
+   ${C_CYAN}Nginx${C_RESET}
+     - HTTP           : 80, 81
+     - HTTPS          : 443
+
+   ${C_CYAN}HAProxy${C_RESET}
+     - 80, 443
+EOF
+print_line
+back_to_menu

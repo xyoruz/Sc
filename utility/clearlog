@@ -1,0 +1,42 @@
+#!/bin/bash
+# ============================================================
+# clearlog - Bersihkan file log sistem
+# Lokasi: /usr/local/sbin/clearlog
+# ============================================================
+
+BASE="/usr/local/sbin/xyr"
+source "$BASE/lib/config.sh"
+source "$BASE/lib/common.sh"
+
+require_root
+
+print_header "CLEAR LOG"
+
+# ---------- Truncate file log besar ----------
+for pattern in /var/log/*.log /var/log/*.err /var/log/mail.*; do
+    for f in $pattern; do
+        [[ -f "$f" ]] || continue
+        size=$(stat -c%s "$f" 2>/dev/null || echo 0)
+        if [[ $size -gt 1048576 ]]; then
+            truncate -s 0 "$f"
+            print_ok "Cleared: $f ($(human_size $size))"
+        fi
+    done
+done
+
+# ---------- File log spesifik ----------
+for f in /var/log/syslog /var/log/messages /var/log/debug /var/log/btmp /var/log/wtmp; do
+    if [[ -f "$f" ]]; then
+        truncate -s 0 "$f" 2>/dev/null && print_ok "Cleared: $f"
+    fi
+done
+
+# ---------- Truncate Xray access log ----------
+if [[ -f "$XRAY_LOG" ]]; then
+    truncate -s 0 "$XRAY_LOG"
+    print_ok "Cleared: $XRAY_LOG"
+fi
+
+log_info "Clear log done"
+print_ok "Selesai"
+back_to_menu

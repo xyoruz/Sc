@@ -1,0 +1,86 @@
+#!/bin/bash
+# ============================================================
+# xp - Auto delete user expired (semua layanan)
+# Lokasi: /usr/local/sbin/xp
+# Dijalankan oleh cron tiap jam
+# ============================================================
+
+BASE="/usr/local/sbin/xyr"
+source "$BASE/lib/config.sh"
+source "$BASE/lib/common.sh"
+source "$BASE/lib/xray-helper.sh"
+
+exec 9>"$LOCKFILE_CRON"
+flock -n 9 || exit 0
+
+TODAY=$(date +%s)
+REMOVED=0
+
+# ---------- Fungsi: cek & hapus user Xray ----------
+check_xray_expired() {
+    local service="$1"
+    local prefix="$2"
+    local db="$3"
+
+    [[ -f "$db" ]] || return 0
+
+    while IFS=' ' read -r pfx user exp rest; do
+        [[ "$pfx" != "$prefix" ]] && continue
+        [[ -z "$user" || -z "$exp" ]] && continue
+
+        local exp_ts
+        exp_ts=$(date -d "$exp" +%s 2>/dev/null)
+        [[ -z "$exp_ts" ]] && continue
+
+        if [[ "$exp_ts" -lt "$TODAY" ]]; then
+            # Hapus dari config
+            xray_backup_config
+            xray_del_user "$prefix" "$user"
+            xray_validate && rm -f "${XRAY_CONF}.bak"
+
+            # Bersihkan file
+            db_del_user "$db" "$prefix" "$user"
+            rm -f "${QUOTA_DIR}/$service/$user"
+            rm -f "${LIMITIP_DIR}/$service/$user"
+            rm -f "${USAGE_DIR}/$service/$user"
+            rm -f "${LOCKED_DIR}/$service/$user"
+            rm -f "${NGINX_WEB}/${service}-${user}.txt" 2>/dev/null
+
+            log_info "Auto-delete expired: $service/$user (exp: $exp)"
+            REMOVED=$((REMOVED + 1))
+        fi
+    done < "$db"
+}
+
+check_xray_expired "vmess"  "$PREFIX_VMESS"  "$DB_VMESS"
+check_xray_expired "vless"  "$PREFIX_VLESS"  "$DB_VLESS"
+check_xray_expired "trojan" "$PREFIX_TROJAN" "$DB_TROJAN"
+check_xray_expired "ss"     "$PREFIX_SS"     "$DB_SS"
+
+restart_service xray
+
+# ---------- Cek SSH ----------
+if [[ -f /etc/shadow ]]; then
+    while IFS=: read -r uname userexp; do
+        [[ -z "$uname" || -z "$userexp" || "$userexp" == "0" ]] && continue
+        local_ts=$((userexp * 86400))
+        if [[ "$local_ts" -lt "$TODAY" ]]; then
+            if getent passwd "$uname" >/dev/null 2>&1; then
+                userdel -f "$uname" >/dev/null 2>&1
+                db_del_user "$DB_SSH" "$PREFIX_SSH" "$uname"
+                rm -f "${QUOTA_DIR}/ssh/$uname"
+                rm -f "${LIMITIP_DIR}/ssh/$uname"
+                rm -f "${USAGE_DIR}/ssh/$uname"
+                rm -f "${LOCKED_DIR}/ssh/$uname"
+                rm -f "${NGINX_WEB}/ssh-${uname}.txt"
+                log_info "Auto-delete expired SSH: $uname"
+                REMOVED=$((REMOVED + 1))
+            fi
+        fi
+    done < <(awk -F: '{print $1":"$8}' /etc/shadow | grep -v ':$')
+fi
+
+restart_service ssh
+
+log_info "xp cleanup: $REMOVED users removed"
+exit 0
