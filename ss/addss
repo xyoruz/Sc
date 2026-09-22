@@ -1,0 +1,146 @@
+#!/bin/bash
+# ============================================================
+# addss - Create Shadowsocks Account (WS + gRPC)
+# Lokasi: /usr/local/sbin/addss
+# ============================================================
+
+BASE="/usr/local/sbin/xyr"
+source "$BASE/lib/config.sh"
+source "$BASE/lib/common.sh"
+source "$BASE/lib/validate.sh"
+source "$BASE/lib/xray-helper.sh"
+
+require_root
+acquire_lock "$LOCKFILE_ADD"
+
+print_header "CREATE SHADOWSOCKS ACCOUNT"
+
+domain=$(get_domain)
+[[ -z "$domain" ]] && { print_error "Domain belum di-set"; release_lock; back_to_menu; exit 1; }
+
+IP=$(get_my_ip)
+ISP=$(cat /root/.info/.isp 2>/dev/null || echo "-")
+CITY=$(cat /root/.info/.city 2>/dev/null || echo "-")
+
+# ---------- Input ----------
+while :; do
+    ask_username USER "Username"
+    if grep -qw "$USER" "$XRAY_CONF" 2>/dev/null; then
+        print_error "Username '$USER' sudah ada di config Xray"
+        continue
+    fi
+    break
+done
+
+ask_number DAYS "Expired (hari)" 1 3650 30
+ask_number QUOTA_GB "Limit Quota GB (0=unlimited)" 0 9999 0
+ask_number IPLIMIT "Limit IP (0=unlimited)" 0 99 2
+
+uuid=$(cat /proc/sys/kernel/random/uuid)
+cipher="aes-128-gcm"
+exp_date=$(date -d "$DAYS days" +"%Y-%m-%d")
+exp_display=$(date -d "$DAYS days" +"%d %b, %Y")
+
+# ---------- Sisip ke config.json ----------
+xray_backup_config
+
+sed -i "/#ssws\$/a\\#!# ${USER} ${exp_date}\\
+},{\"password\": \"${uuid}\",\"method\": \"${cipher}\",\"email\": \"${USER}\"" "$XRAY_CONF"
+sed -i "/#ssgrpc\$/a\\#!# ${USER} ${exp_date}\\
+},{\"password\": \"${uuid}\",\"method\": \"${cipher}\",\"email\": \"${USER}\"" "$XRAY_CONF"
+
+if ! xray_apply; then
+    print_error "Config Xray corrupt, rollback!"
+    release_lock
+    back_to_menu
+    exit 1
+fi
+
+# ---------- Base64 user:pass untuk link ----------
+ss_b64=$(printf "%s:%s" "$cipher" "$uuid" | base64 -w0)
+
+LINK_WS_TLS="ss://${ss_b64}@${domain}:443?path=%2Fss-ws&security=tls&encryption=none&type=ws#${USER}"
+LINK_WS_NTLS="ss://${ss_b64}@${domain}:80?path=%2Fss-ws&security=none&encryption=none&type=ws#${USER}"
+LINK_GRPC_TLS="ss://${ss_b64}@${domain}:443?mode=gun&security=tls&encryption=none&type=grpc&serviceName=ss-grpc&sni=${domain}#${USER}"
+LINK_GRPC_NTLS="ss://${ss_b64}@${domain}:80?mode=gun&security=none&encryption=none&type=grpc&serviceName=ss-grpc&sni=${domain}#${USER}"
+
+# ---------- DB ----------
+db_save_user "$DB_SS" "$PREFIX_SS" "$USER" "$exp_date" "$uuid" "$QUOTA_GB" "$IPLIMIT"
+
+# ---------- Limit ----------
+[[ "$IPLIMIT" -gt 0 ]] && echo "$IPLIMIT" > "$LIMITIP_DIR/ss/$USER"
+[[ "$QUOTA_GB" -gt 0 ]] && echo "$((QUOTA_GB * 1024 * 1024 * 1024))" > "$QUOTA_DIR/ss/$USER"
+
+# ---------- File web ----------
+cat > "${NGINX_WEB}/sodosokws-${USER}.txt" <<-END
+=================================
+Format Shadowsocks WS
+=================================
+Username         : $USER
+Host             : $domain
+Cipher           : $cipher
+Password         : $uuid
+Network          : ws
+Path             : /ss-ws
+=================================
+Link WS TLS   : $LINK_WS_TLS
+Link WS NTLS  : $LINK_WS_NTLS
+=================================
+Limit IP       : $IPLIMIT
+Limit Quota    : $QUOTA_GB GB
+Aktif Selama   : $DAYS Hari
+Berakhir Pada  : $exp_display
+=================================
+END
+
+cat > "${NGINX_WEB}/sodosokgrpc-${USER}.txt" <<-END
+=================================
+Format Shadowsocks gRPC
+=================================
+Username         : $USER
+Host             : $domain
+Cipher           : $cipher
+Password         : $uuid
+Network          : grpc
+ServiceName      : ss-grpc
+=================================
+Link gRPC TLS  : $LINK_GRPC_TLS
+Link gRPC NTLS : $LINK_GRPC_NTLS
+=================================
+Limit IP       : $IPLIMIT
+Limit Quota    : $QUOTA_GB GB
+Aktif Selama   : $DAYS Hari
+Berakhir Pada  : $exp_display
+=================================
+END
+
+chmod 644 "${NGINX_WEB}/sodosokws-${USER}.txt" "${NGINX_WEB}/sodosokgrpc-${USER}.txt"
+
+log_info "Shadowsocks created: $USER | exp: $exp_date"
+
+# ---------- Output ----------
+clear
+print_line
+print_title "     SHADOWSOCKS ACCOUNT BERHASIL DIBUAT"
+print_line
+echo "Username    : $USER"
+echo "Domain      : $domain"
+echo "Cipher      : $cipher"
+echo "Password    : $uuid"
+echo "Limit IP    : $IPLIMIT"
+echo "Limit Quota : $QUOTA_GB GB"
+print_line
+echo "Link WS TLS   : $LINK_WS_TLS"
+echo "Link WS NTLS  : $LINK_WS_NTLS"
+print_line
+echo "Link gRPC TLS : $LINK_GRPC_TLS"
+echo "Link gRPC NTLS: $LINK_GRPC_NTLS"
+print_line
+echo "OpenClash WS  : http://$domain:81/sodosokws-${USER}.txt"
+echo "OpenClash gRPC: http://$domain:81/sodosokgrpc-${USER}.txt"
+print_line
+echo "Aktif       : $DAYS Hari | Berakhir: $exp_display"
+print_line
+
+release_lock
+back_to_menu

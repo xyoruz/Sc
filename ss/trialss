@@ -1,0 +1,65 @@
+#!/bin/bash
+# ============================================================
+# trialss - Create Trial Shadowsocks (durasi menit)
+# Lokasi: /usr/local/sbin/trialss
+# ============================================================
+
+BASE="/usr/local/sbin/xyr"
+source "$BASE/lib/config.sh"
+source "$BASE/lib/common.sh"
+source "$BASE/lib/validate.sh"
+source "$BASE/lib/xray-helper.sh"
+
+require_root
+
+print_header "TRIAL SHADOWSOCKS ACCOUNT"
+
+domain=$(get_domain)
+[[ -z "$domain" ]] && { print_error "Domain belum di-set"; back_to_menu; exit 1; }
+
+ask_number MINUTES "Durasi trial (menit)" 1 1440 60
+
+USER="trial$(tr -dc 0-9 </dev/urandom | head -c5)"
+uuid=$(cat /proc/sys/kernel/random/uuid)
+cipher="aes-128-gcm"
+exp_date=$(date -d "+1 day" +"%Y-%m-%d")
+
+xray_backup_config
+sed -i "/#ssws\$/a\\#!# ${USER} ${exp_date}\\
+},{\"password\": \"${uuid}\",\"method\": \"${cipher}\",\"email\": \"${USER}\"" "$XRAY_CONF"
+sed -i "/#ssgrpc\$/a\\#!# ${USER} ${exp_date}\\
+},{\"password\": \"${uuid}\",\"method\": \"${cipher}\",\"email\": \"${USER}\"" "$XRAY_CONF"
+
+if ! xray_apply; then
+    print_error "Gagal create trial"
+    back_to_menu; exit 1
+fi
+
+db_save_user "$DB_SS" "$PREFIX_SS" "$USER" "$exp_date" "$uuid" 0 1
+
+if command -v at >/dev/null 2>&1; then
+    echo "/usr/local/sbin/del-auto ss ${USER}" | at now +"$MINUTES" minutes 2>/dev/null || true
+fi
+
+ss_b64=$(printf "%s:%s" "$cipher" "$uuid" | base64 -w0)
+LINK_WS_TLS="ss://${ss_b64}@${domain}:443?path=%2Fss-ws&security=tls&encryption=none&type=ws#${USER}"
+LINK_GRPC_TLS="ss://${ss_b64}@${domain}:443?mode=gun&security=tls&encryption=none&type=grpc&serviceName=ss-grpc&sni=${domain}#${USER}"
+
+log_info "Trial Shadowsocks: $USER (${MINUTES}m)"
+
+clear
+print_line
+print_title "        TRIAL SHADOWSOCKS DIBUAT"
+print_line
+echo "Username  : $USER"
+echo "Password  : $uuid"
+echo "Cipher    : $cipher"
+echo "Durasi    : $MINUTES menit"
+print_line
+echo "Link WS TLS   : $LINK_WS_TLS"
+echo "Link gRPC TLS : $LINK_GRPC_TLS"
+print_line
+print_warn "Akun dihapus otomatis dalam $MINUTES menit"
+print_line
+
+back_to_menu
