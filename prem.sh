@@ -6,8 +6,8 @@
 # ============================================================
 
 # ---------- Identitas Repo ----------
-REPO_USER="<user>"          # GANTI dengan username GitHub
-REPO_NAME="<repo>"          # GANTI dengan nama repo
+REPO_USER="<xyoruz>"          # GANTI dengan username GitHub
+REPO_NAME="<Sc>"          # GANTI dengan nama repo
 REPO_BRANCH="main"
 REPO="https://raw.githubusercontent.com/${REPO_USER}/${REPO_NAME}/${REPO_BRANCH}"
 
