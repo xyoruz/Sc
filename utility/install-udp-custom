@@ -1,0 +1,103 @@
+#!/bin/bash
+# ============================================================
+# install-udp-custom - Install UDP Custom (port range)
+# Lokasi: /usr/local/sbin/install-udp-custom
+# ============================================================
+
+BASE="/usr/local/sbin/xyr"
+source "$BASE/lib/config.sh"
+source "$BASE/lib/common.sh"
+
+require_root
+
+print_header "INSTALL UDP CUSTOM (PORT RANGE)"
+
+# ---------- Deteksi virtualisasi ----------
+VIRT=$(systemd-detect-virt 2>/dev/null || echo "unknown")
+if [[ "$VIRT" == "openvz" ]]; then
+    print_error "OpenVZ tidak mendukung UDP Custom"
+    back_to_menu
+    exit 1
+fi
+
+# ---------- Cek TUN ----------
+if [[ ! -e /dev/net/tun ]]; then
+    mkdir -p /dev/net
+    mknod /dev/net/tun c 10 200 2>/dev/null
+    chmod 666 /dev/net/tun
+fi
+
+# ---------- Download binary UDP Custom ----------
+# Binary UDP Custom (udp-custom) dari repo populer
+print_info "Download UDP Custom binary..."
+
+REPO_UDP="https://raw.githubusercontent.com/<user>/<repo>/main/config"
+BIN_URL="${REPO_UDP}/udp-custom"
+
+if ! safe_download "$BIN_URL" /usr/local/bin/udp-custom; then
+    print_error "Gagal download udp-custom. Upload manual ke /usr/local/bin/"
+    back_to_menu
+    exit 1
+fi
+
+chmod +x /usr/local/bin/udp-custom
+
+# ---------- Config UDP Custom ----------
+mkdir -p /etc/udp-custom
+
+cat > /etc/udp-custom/config.json <<'EOF'
+{
+  "listen": ":1-65535",
+  "stream_buffer": 8388608,
+  "receive_buffer": 8388608,
+  "auth": {
+    "mode": "passwords",
+    "passwords": []
+  }
+}
+EOF
+
+# ---------- Systemd service ----------
+cat > /etc/systemd/system/udp-custom.service <<'EOF'
+[Unit]
+Description=UDP Custom Server
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/etc/udp-custom
+ExecStart=/usr/local/bin/udp-custom server -exclude 10000-10010,10085,22,53,80,443,81,109,143,2053,2082,8080,8443
+Restart=always
+RestartSec=3
+LimitNOFILE=1048576
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# ---------- Enable & start ----------
+systemctl daemon-reload
+systemctl enable --now udp-custom >/dev/null 2>&1
+
+sleep 2
+
+if systemctl is-active --quiet udp-custom; then
+    print_ok "UDP Custom aktif"
+else
+    print_error "UDP Custom gagal start"
+    journalctl -u udp-custom -n 20 --no-pager
+fi
+
+clear
+print_line
+print_title "        UDP CUSTOM PORT RANGE"
+print_line
+echo "  Port       : 1-65535"
+echo "  Exclude    : 10000-10010, 10085, 22, 53, 80, 443, 81, 109, 143, 2053, 2082, 8080, 8443"
+echo "  Service    : udp-custom"
+echo "  Config     : /etc/udp-custom/config.json"
+print_line
+log_info "UDP Custom installed"
+
+back_to_menu
