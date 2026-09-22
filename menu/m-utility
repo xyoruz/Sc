@@ -26,11 +26,14 @@ echo -e "   ${C_YELLOW}[8]${C_RESET}   Speedtest"
 echo -e "   ${C_YELLOW}[9]${C_RESET}   Info Port & Service"
 echo -e "   ${C_YELLOW}[10]${C_RESET}  Info Server"
 echo -e "   ${C_YELLOW}[11]${C_RESET}  Update Script dari GitHub"
+echo -e "   ${C_YELLOW}[12]${C_RESET}  Install UDP Custom (BadVPN)"
+echo -e "   ${C_YELLOW}[13]${C_RESET}  Install UDP Custom (Port Range)"
+echo -e "   ${C_YELLOW}[14]${C_RESET}  Uninstall UDP Custom"
 echo ""
 echo -e "   ${C_RED}[0]${C_RESET}   Kembali ke Menu Utama"
 echo ""
 echo -e "${C_GRAY}────────────────────────────────────────────────────────${C_RESET}"
-read -rp "   Pilih menu [1-11 atau 0]: " opt
+read -rp "   Pilih menu [1-14 atau 0]: " opt
 
 case "$opt" in
     1)  clear; addhost ;;
@@ -43,7 +46,10 @@ case "$opt" in
     8)  clear; speedtest ;;
     9)  clear; prot ;;
     10) clear; info ;;
-    11) clear; wget -q "${REPO:-https://raw.githubusercontent.com/<user>/<repo>/main}/update.sh" -O /root/update.sh && chmod +x /root/update.sh && /root/update.sh ;;
+    11) clear; wget -q "https://raw.githubusercontent.com/<user>/<repo>/main/update.sh" -O /root/update.sh && chmod +x /root/update.sh && /root/update.sh ;;
+    12) clear; install-udp ;;
+    13) clear; install-udp-custom ;;
+    14) clear; uninstall-udp ;;
     0)  clear; menu ;;
     *)  m-utility ;;
 esac
