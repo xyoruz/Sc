@@ -1,0 +1,53 @@
+#!/bin/bash
+# ============================================================
+# cek-lock - Lihat semua user ter-lock
+# Lokasi: /usr/local/sbin/cek-lock
+# ============================================================
+
+BASE="/usr/local/sbin/xyr"
+source "$BASE/lib/config.sh"
+source "$BASE/lib/common.sh"
+
+require_root
+
+clear
+print_line
+print_title "        DAFTAR USER TER-LOCK"
+print_line
+
+if autolock_enabled; then
+    echo "  Auto-Lock : ${C_GREEN}AKTIF${C_RESET}"
+else
+    echo "  Auto-Lock : ${C_RED}MATI${C_RESET}"
+fi
+print_line
+echo ""
+
+total=0
+for svc in vmess vless trojan ss ssh; do
+    dir="$LOCKED_DIR/$svc"
+    [[ -d "$dir" ]] || continue
+
+    found=0
+    for f in "$dir"/*; do
+        [[ -f "$f" ]] || continue
+        [[ "$f" == *.config ]] && continue
+        u=$(basename "$f")
+        info=$(cat "$f" 2>/dev/null)
+        if [[ $found -eq 0 ]]; then
+            echo -e "  ${C_CYAN}== $svc ==${C_RESET}"
+            found=1
+        fi
+        echo "    - $u  ($info)"
+        total=$((total + 1))
+    done
+done
+
+if [[ $total -eq 0 ]]; then
+    print_info "Tidak ada user ter-lock"
+fi
+
+print_line
+echo "  Total: $total user ter-lock"
+print_line
+back_to_menu

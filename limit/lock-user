@@ -1,0 +1,89 @@
+#!/bin/bash
+# ============================================================
+# lock-user - Manual lock user (semua layanan)
+# Lokasi: /usr/local/sbin/lock-user
+# ============================================================
+
+BASE="/usr/local/sbin/xyr"
+source "$BASE/lib/config.sh"
+source "$BASE/lib/common.sh"
+
+require_root
+
+print_header "MANUAL LOCK USER"
+
+echo "   ${C_YELLOW}[1]${C_RESET}  Vmess"
+echo "   ${C_YELLOW}[2]${C_RESET}  Vless"
+echo "   ${C_YELLOW}[3]${C_RESET}  Trojan"
+echo "   ${C_YELLOW}[4]${C_RESET}  Shadowsocks"
+echo "   ${C_YELLOW}[5]${C_RESET}  SSH"
+echo ""
+read -rp "   Pilih layanan [1-5]: " svc
+
+case "$svc" in
+    1) SERVICE="vmess"; DB_FILE="$DB_VMESS"; PREFIX="$PREFIX_VMESS" ;;
+    2) SERVICE="vless"; DB_FILE="$DB_VLESS"; PREFIX="$PREFIX_VLESS" ;;
+    3) SERVICE="trojan"; DB_FILE="$DB_TROJAN"; PREFIX="$PREFIX_TROJAN" ;;
+    4) SERVICE="ss"; DB_FILE="$DB_SS"; PREFIX="$PREFIX_SS" ;;
+    5) SERVICE="ssh"; DB_FILE="$DB_SSH"; PREFIX="$PREFIX_SSH" ;;
+    *) back_to_menu; exit 0 ;;
+esac
+
+print_line
+print_title "         DAFTAR USER $SERVICE"
+print_line
+
+if [[ "$SERVICE" == "ssh" ]]; then
+    while IFS=: read -r uname _ uid _; do
+        [[ "$uid" -lt 1000 ]] && continue
+        [[ "$uname" == "nobody" ]] && continue
+        st=$(passwd -S "$uname" 2>/dev/null | awk '{print $2}')
+        [[ "$st" == "L" ]] && st_display="${C_RED}LOCKED${C_RESET}" || st_display="${C_GREEN}OK${C_RESET}"
+        printf "%-20s %b\n" "$uname" "$st_display"
+    done < /etc/passwd
+else
+    if [[ -f "$DB_FILE" ]]; then
+        awk -v p="$PREFIX" '$1==p {print $2}' "$DB_FILE" | while read -r u; do
+            [[ -f "$LOCKED_DIR/$SERVICE/$u" ]] && st="${C_RED}LOCKED${C_RESET}" || st="${C_GREEN}OK${C_RESET}"
+            printf "%-20s %b\n" "$u" "$st"
+        done
+    fi
+fi
+print_line
+echo ""
+
+read -rp "Username yang di-lock: " USER
+[[ -z "$USER" ]] && { print_warn "Dibatalkan"; back_to_menu; exit 0; }
+
+read -rp "Alasan lock (opsional): " REASON
+[[ -z "$REASON" ]] && REASON="by-admin"
+
+TS=$(date +"%Y-%m-%d %H:%M:%S")
+mkdir -p "$LOCKED_DIR/$SERVICE"
+echo "MANUAL|$TS|$REASON" > "$LOCKED_DIR/$SERVICE/$USER"
+
+if [[ "$SERVICE" == "ssh" ]]; then
+    if getent passwd "$USER" >/dev/null 2>&1; then
+        passwd -l "$USER" >/dev/null 2>&1
+        pkill -KILL -u "$USER" 2>/dev/null || true
+        restart_service ssh
+    fi
+else
+    # Xray: hapus user sementara dari config (simpan di .locked)
+    if grep -qw "$USER" "$XRAY_CONF" 2>/dev/null; then
+        xray_backup_config
+        exp=$(grep -m1 "^${PREFIX} ${USER} " "$XRAY_CONF" | cut -d ' ' -f 3)
+        if [[ -n "$exp" ]]; then
+            # Simpan baris config ke file locked
+            grep -A1 "^${PREFIX} ${USER} ${exp}" "$XRAY_CONF" > "$LOCKED_DIR/$SERVICE/${USER}.config" 2>/dev/null
+            # Hapus sementara
+            sed -i "/^${PREFIX} ${USER} ${exp}/,/^},{/d" "$XRAY_CONF"
+            xray_validate && rm -f "${XRAY_CONF}.bak" && restart_service xray
+        fi
+    fi
+fi
+
+log_info "Manual lock: $SERVICE/$USER ($REASON)"
+
+print_ok "User $USER ($SERVICE) berhasil di-LOCK"
+back_to_menu

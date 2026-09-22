@@ -1,0 +1,115 @@
+#!/bin/bash
+# ============================================================
+# limitip-cron - Auto-lock user berdasarkan limit IP
+# Lokasi: /usr/local/sbin/limitip-cron
+# Dijalankan oleh cron tiap 1 menit
+# ============================================================
+
+BASE="/usr/local/sbin/xyr"
+source "$BASE/lib/config.sh"
+source "$BASE/lib/common.sh"
+
+# Cegah 2 proses barengan
+exec 9>"$LOCKFILE_CRON"
+flock -n 9 || exit 0
+
+# Autolock ON?
+autolock_enabled || exit 0
+
+# ---------- Cek Xray (Vmess, Vless, Trojan, SS) ----------
+# Format log xray: <date> <time> <ip:port> accepted <dest> [<inbound> >> <outbound>] email: <user>
+check_xray_service() {
+    local service="$1"
+    local prefix="$2"
+
+    [[ -d "$LIMITIP_DIR/$service" ]] || return 0
+
+    for f in "$LIMITIP_DIR/$service"/*; do
+        [[ -f "$f" ]] || continue
+        local user
+        user=$(basename "$f")
+        local limit
+        limit=$(cat "$f" 2>/dev/null)
+        [[ -z "$limit" || "$limit" -eq 0 ]] && continue
+
+        # User sudah ter-lock? skip
+        [[ -f "$LOCKED_DIR/$service/$user" ]] && continue
+
+        # Hitung IP unik dari log (500 baris terakhir)
+        local count
+        count=$(grep -w "$user" "$XRAY_LOG" 2>/dev/null | tail -n 500 | \
+            awk '{print $3}' | sed 's/tcp://;s/^.*://' | sort -u | wc -l)
+
+        if [[ "$count" -gt "$limit" ]]; then
+            local ts
+            ts=$(date +"%Y-%m-%d %H:%M:%S")
+
+            # Log pelanggaran
+            echo "$ts|$service|$user|$count>$limit" >> "$XYR_LOG/multilogin.log"
+
+            # Simpan config user sebelum dihapus
+            xray_backup_config
+            local exp
+            exp=$(grep -m1 "^${prefix} ${user} " "$XRAY_CONF" | cut -d ' ' -f 3)
+            if [[ -n "$exp" ]]; then
+                grep -A1 "^${prefix} ${user} ${exp}" "$XRAY_CONF" > "$LOCKED_DIR/$service/${user}.config" 2>/dev/null
+                sed -i "/^${prefix} ${user} ${exp}/,/^},{/d" "$XRAY_CONF"
+                xray_validate && rm -f "${XRAY_CONF}.bak"
+            fi
+
+            # Tandai lock
+            mkdir -p "$LOCKED_DIR/$service"
+            echo "AUTO-IP|$ts|IP:$count>$limit" > "$LOCKED_DIR/$service/$user"
+
+            log_warn "Auto-lock IP: $service/$user ($count>$limit)"
+        fi
+    done
+}
+
+check_xray_service "vmess"  "$PREFIX_VMESS"
+check_xray_service "vless"  "$PREFIX_VLESS"
+check_xray_service "trojan" "$PREFIX_TROJAN"
+check_xray_service "ss"     "$PREFIX_SS"
+
+# Restart xray kalau ada perubahan
+if [[ -f "$LOCKED_DIR/vmess/"*".config" || -f "$LOCKED_DIR/vless/"*".config" || \
+      -f "$LOCKED_DIR/trojan/"*".config" || -f "$LOCKED_DIR/ss/"*".config" ]] 2>/dev/null; then
+    restart_service xray
+fi
+
+# ---------- Cek SSH ----------
+check_ssh() {
+    [[ -d "$LIMITIP_DIR/ssh" ]] || return 0
+
+    for f in "$LIMITIP_DIR/ssh"/*; do
+        [[ -f "$f" ]] || continue
+        local user
+        user=$(basename "$f")
+        local limit
+        limit=$(cat "$f" 2>/dev/null)
+        [[ -z "$limit" || "$limit" -eq 0 ]] && continue
+
+        [[ -f "$LOCKED_DIR/ssh/$user" ]] && continue
+
+        # Hitung IP unik via who + ss
+        local count
+        count=$(who 2>/dev/null | awk -v u="$user" '$1==u {print $5}' | tr -d '()' | sort -u | wc -l)
+        [[ "$count" -eq 0 ]] && count=$(ss -tnp 2>/dev/null | grep -c "users:((\"$user\"" || echo 0)
+
+        if [[ "$count" -gt "$limit" ]]; then
+            local ts
+            ts=$(date +"%Y-%m-%d %H:%M:%S")
+            echo "$ts|ssh|$user|$count>$limit" >> "$XYR_LOG/multilogin.log"
+
+            passwd -l "$user" >/dev/null 2>&1
+            pkill -KILL -u "$user" 2>/dev/null || true
+            mkdir -p "$LOCKED_DIR/ssh"
+            echo "AUTO-IP|$ts|IP:$count>$limit" > "$LOCKED_DIR/ssh/$user"
+            log_warn "Auto-lock IP SSH: $user ($count>$limit)"
+        fi
+    done
+}
+
+check_ssh
+
+exit 0

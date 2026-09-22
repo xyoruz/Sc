@@ -1,0 +1,104 @@
+#!/bin/bash
+# ============================================================
+# unlock-user - Manual unlock user (semua layanan)
+# Lokasi: /usr/local/sbin/unlock-user
+# ============================================================
+
+BASE="/usr/local/sbin/xyr"
+source "$BASE/lib/config.sh"
+source "$BASE/lib/common.sh"
+
+require_root
+
+print_header "MANUAL UNLOCK USER"
+
+echo "   ${C_YELLOW}[1]${C_RESET}  Vmess"
+echo "   ${C_YELLOW}[2]${C_RESET}  Vless"
+echo "   ${C_YELLOW}[3]${C_RESET}  Trojan"
+echo "   ${C_YELLOW}[4]${C_RESET}  Shadowsocks"
+echo "   ${C_YELLOW}[5]${C_RESET}  SSH"
+echo ""
+read -rp "   Pilih layanan [1-5]: " svc
+
+case "$svc" in
+    1) SERVICE="vmess"; PREFIX="$PREFIX_VMESS" ;;
+    2) SERVICE="vless"; PREFIX="$PREFIX_VLESS" ;;
+    3) SERVICE="trojan"; PREFIX="$PREFIX_TROJAN" ;;
+    4) SERVICE="ss"; PREFIX="$PREFIX_SS" ;;
+    5) SERVICE="ssh"; PREFIX="$PREFIX_SSH" ;;
+    *) back_to_menu; exit 0 ;;
+esac
+
+print_line
+print_title "      USER TER-LOCK ($SERVICE)"
+print_line
+
+found=0
+if [[ -d "$LOCKED_DIR/$SERVICE" ]]; then
+    for f in "$LOCKED_DIR/$SERVICE"/*; do
+        [[ -f "$f" ]] || continue
+        [[ "$f" == *.config ]] && continue
+        u=$(basename "$f")
+        info=$(cat "$f" 2>/dev/null)
+        echo "  - $u  ($info)"
+        found=1
+    done
+fi
+[[ $found -eq 0 ]] && print_info "Tidak ada user ter-lock"
+print_line
+echo ""
+
+read -rp "Username yang akan di-unlock: " USER
+[[ -z "$USER" ]] && { print_warn "Dibatalkan"; back_to_menu; exit 0; }
+
+if [[ "$SERVICE" == "ssh" ]]; then
+    if getent passwd "$USER" >/dev/null 2>&1; then
+        passwd -u "$USER" >/dev/null 2>&1
+        restart_service ssh
+    fi
+else
+    # Xray: kembalikan config yang disimpan
+    CFG_BAK="$LOCKED_DIR/$SERVICE/${USER}.config"
+    if [[ -f "$CFG_BAK" ]]; then
+        xray_backup_config
+        # Sisip kembali setelah tag yang sesuai
+        # Untuk kesederhanaan: baca file .config dan sisip
+        head -1 "$CFG_BAK" | sed -n '1p' > /tmp/restore-line
+        # Cara simpel: gunakan xray_add_user dengan prefix
+        prefix="$PREFIX"
+        # Config tersimpan sudah format lengkap, sisip manual:
+        # Hapus baris pertama (prefix user exp), ambil sisanya
+        line_prefix=$(head -1 "$CFG_BAK")
+        line_json=$(tail -1 "$CFG_BAK")
+        # Cari tag (mis. #vmess) - tebak dari service
+        case "$SERVICE" in
+            vmess)  TAG_WS="#vmess"; TAG_GRPC="#vmessgrpc" ;;
+            vless)  TAG_WS="#vless"; TAG_GRPC="#vlessgrpc" ;;
+            trojan) TAG_WS="#trojanws"; TAG_GRPC="#trojangrpc" ;;
+            ss)     TAG_WS="#ssws"; TAG_GRPC="#ssgrpc" ;;
+        esac
+        sed -i "/${TAG_WS}\$/a\\${line_prefix}\\
+${line_json}" "$XRAY_CONF"
+        sed -i "/${TAG_GRPC}\$/a\\${line_prefix}\\
+${line_json}" "$XRAY_CONF"
+        if xray_validate; then
+            rm -f "${XRAY_CONF}.bak"
+            restart_service xray
+            print_ok "Config user $USER dikembalikan"
+        else
+            xray_rollback
+            print_error "Gagal restore config. Rollback."
+        fi
+    else
+        print_warn "File config lock tidak ditemukan. User mungkin perlu dibuat ulang."
+    fi
+fi
+
+# Hapus status lock
+rm -f "$LOCKED_DIR/$SERVICE/$USER"
+rm -f "$LOCKED_DIR/$SERVICE/${USER}.config"
+
+log_info "Manual unlock: $SERVICE/$USER"
+
+print_ok "User $USER ($SERVICE) berhasil di-UNLOCK"
+back_to_menu

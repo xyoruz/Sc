@@ -1,0 +1,98 @@
+#!/bin/bash
+# ============================================================
+# limitquota-cron - Auto-lock user berdasarkan limit quota
+# Lokasi: /usr/local/sbin/limitquota-cron
+# Dijalankan oleh cron tiap 5 menit
+# ============================================================
+
+BASE="/usr/local/sbin/xyr"
+source "$BASE/lib/config.sh"
+source "$BASE/lib/common.sh"
+
+exec 9>"$LOCKFILE_CRON"
+flock -n 9 || exit 0
+
+# Autolock ON?
+autolock_enabled || exit 0
+
+# ---------- Fungsi: ambil usage dari Xray API ----------
+# Xray harus punya stats API di 127.0.0.1:10085
+xray_get_usage() {
+    local email="$1"
+    local up down
+    up=$(xray api stats --server="$XRAY_API" -name "user>>>${email}>>>traffic>>>uplink" 2>/dev/null | grep -oE "value: [0-9]+" | awk '{print $2}')
+    down=$(xray api stats --server="$XRAY_API" -name "user>>>${email}>>>traffic>>>downlink" 2>/dev/null | grep -oE "value: [0-9]+" | awk '{print $2}')
+    up=${up:-0}
+    down=${down:-0}
+    echo $((up + down))
+}
+
+# Xray API tersedia?
+if ! command -v xray >/dev/null 2>&1; then
+    exit 0
+fi
+
+# Cek Xray API jalan (port 10085)
+if ! ss -tlnp 2>/dev/null | grep -q "$XRAY_API"; then
+    log_warn "Xray API tidak aktif. Skip quota check."
+    exit 0
+fi
+
+# ---------- Cek tiap layanan Xray ----------
+check_quota() {
+    local service="$1"
+    local prefix="$2"
+
+    [[ -d "$QUOTA_DIR/$service" ]] || return 0
+
+    for f in "$QUOTA_DIR/$service"/*; do
+        [[ -f "$f" ]] || continue
+        local user
+        user=$(basename "$f")
+        local limit
+        limit=$(cat "$f" 2>/dev/null)
+        [[ -z "$limit" || "$limit" -eq 0 ]] && continue
+
+        # User sudah ter-lock? skip
+        [[ -f "$LOCKED_DIR/$service/$user" ]] && continue
+
+        # Ambil usage dari Xray API
+        local usage
+        usage=$(xray_get_usage "$user")
+        [[ -z "$usage" ]] && usage=0
+
+        # Simpan usage
+        mkdir -p "$USAGE_DIR/$service"
+        echo "$usage" > "$USAGE_DIR/$service/$user"
+
+        if [[ "$usage" -ge "$limit" ]]; then
+            local ts
+            ts=$(date +"%Y-%m-%d %H:%M:%S")
+
+            echo "$ts|$service|$user|quota:$(human_size "$usage")/$(human_size "$limit")" >> "$XYR_LOG/quota.log"
+
+            xray_backup_config
+            local exp
+            exp=$(grep -m1 "^${prefix} ${user} " "$XRAY_CONF" | cut -d ' ' -f 3)
+            if [[ -n "$exp" ]]; then
+                grep -A1 "^${prefix} ${user} ${exp}" "$XRAY_CONF" > "$LOCKED_DIR/$service/${user}.config" 2>/dev/null
+                sed -i "/^${prefix} ${user} ${exp}/,/^},{/d" "$XRAY_CONF"
+                xray_validate && rm -f "${XRAY_CONF}.bak"
+            fi
+
+            mkdir -p "$LOCKED_DIR/$service"
+            echo "AUTO-QUOTA|$ts|Quota:$(human_size "$usage")/$(human_size "$limit")" > "$LOCKED_DIR/$service/$user"
+
+            log_warn "Auto-lock QUOTA: $service/$user ($usage/$limit)"
+        fi
+    done
+}
+
+check_quota "vmess"  "$PREFIX_VMESS"
+check_quota "vless"  "$PREFIX_VLESS"
+check_quota "trojan" "$PREFIX_TROJAN"
+check_quota "ss"     "$PREFIX_SS"
+
+restart_service xray
+
+exit 0

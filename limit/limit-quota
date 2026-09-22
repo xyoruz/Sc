@@ -1,0 +1,94 @@
+#!/bin/bash
+# ============================================================
+# limit-quota - Menu atur limit quota per user
+# Lokasi: /usr/local/sbin/limit-quota
+# ============================================================
+
+BASE="/usr/local/sbin/xyr"
+source "$BASE/lib/config.sh"
+source "$BASE/lib/common.sh"
+source "$BASE/lib/validate.sh"
+
+require_root
+
+print_header "ATUR LIMIT QUOTA USER"
+
+echo "   ${C_YELLOW}[1]${C_RESET}  Vmess"
+echo "   ${C_YELLOW}[2]${C_RESET}  Vless"
+echo "   ${C_YELLOW}[3]${C_RESET}  Trojan"
+echo "   ${C_YELLOW}[4]${C_RESET}  Shadowsocks"
+echo "   ${C_YELLOW}[5]${C_RESET}  SSH"
+echo ""
+read -rp "   Pilih layanan [1-5]: " svc
+
+case "$svc" in
+    1) SERVICE="vmess"; DB_FILE="$DB_VMESS"; PREFIX="$PREFIX_VMESS" ;;
+    2) SERVICE="vless"; DB_FILE="$DB_VLESS"; PREFIX="$PREFIX_VLESS" ;;
+    3) SERVICE="trojan"; DB_FILE="$DB_TROJAN"; PREFIX="$PREFIX_TROJAN" ;;
+    4) SERVICE="ss"; DB_FILE="$DB_SS"; PREFIX="$PREFIX_SS" ;;
+    5) SERVICE="ssh"; DB_FILE="$DB_SSH"; PREFIX="$PREFIX_SSH" ;;
+    *) back_to_menu; exit 0 ;;
+esac
+
+print_line
+print_title "         DAFTAR USER $SERVICE"
+print_line
+printf "%-20s %-15s %s\n" "USERNAME" "USAGE" "QUOTA"
+print_line
+
+# ---------- List user ----------
+if [[ "$SERVICE" == "ssh" ]]; then
+    while IFS=: read -r uname _ uid _; do
+        [[ "$uid" -lt 1000 ]] && continue
+        [[ "$uname" == "nobody" ]] && continue
+        q=$(cat "$QUOTA_DIR/ssh/$uname" 2>/dev/null || echo 0)
+        u=$(cat "$USAGE_DIR/ssh/$uname" 2>/dev/null || echo 0)
+        printf "%-20s %-15s %s\n" "$uname" "$(human_size "$u")" "$(human_size "$q")"
+    done < /etc/passwd
+else
+    if [[ -f "$DB_FILE" ]]; then
+        awk -v p="$PREFIX" '$1==p {print $2}' "$DB_FILE" | while read -r u; do
+            q=$(cat "$QUOTA_DIR/$SERVICE/$u" 2>/dev/null || echo 0)
+            us=$(cat "$USAGE_DIR/$SERVICE/$u" 2>/dev/null || echo 0)
+            printf "%-20s %-15s %s\n" "$u" "$(human_size "$us")" "$(human_size "$q")"
+        done
+    fi
+fi
+print_line
+echo ""
+
+read -rp "Username yang ingin diubah: " USER
+[[ -z "$USER" ]] && { print_warn "Dibatalkan"; back_to_menu; exit 0; }
+
+# Validasi
+if [[ "$SERVICE" == "ssh" ]]; then
+    getent passwd "$USER" >/dev/null 2>&1 || { print_error "User tidak ditemukan"; back_to_menu; exit 1; }
+else
+    grep -qw "$USER" "$XRAY_CONF" 2>/dev/null || { print_error "User tidak ditemukan"; back_to_menu; exit 1; }
+fi
+
+ask_number NEW_QUOTA_GB "Limit Quota baru (GB, 0=unlimited)" 0 9999 0
+
+if [[ "$NEW_QUOTA_GB" -eq 0 ]]; then
+    rm -f "$QUOTA_DIR/$SERVICE/$USER"
+    print_ok "Quota user $USER dihapus (unlimited)"
+else
+    mkdir -p "$QUOTA_DIR/$SERVICE"
+    echo "$((NEW_QUOTA_GB * 1024 * 1024 * 1024))" > "$QUOTA_DIR/$SERVICE/$USER"
+    print_ok "Quota user $USER diubah ke $NEW_QUOTA_GB GB"
+fi
+
+# ---------- Update DB ----------
+if [[ "$SERVICE" != "ssh" && -f "$DB_FILE" ]]; then
+    old_line=$(grep -E "^${PREFIX} ${USER} " "$DB_FILE")
+    if [[ -n "$old_line" ]]; then
+        exp=$(echo "$old_line" | awk '{print $3}')
+        uuid=$(echo "$old_line" | awk '{print $4}')
+        ipl=$(echo "$old_line" | awk '{print $6}')
+        sed -i "/^${PREFIX} ${USER} /d" "$DB_FILE"
+        echo "${PREFIX} ${USER} ${exp} ${uuid} ${NEW_QUOTA_GB} ${ipl}" >> "$DB_FILE"
+    fi
+fi
+
+log_info "Limit quota updated: $SERVICE/$USER -> ${NEW_QUOTA_GB}GB"
+back_to_menu

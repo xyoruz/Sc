@@ -1,0 +1,102 @@
+#!/bin/bash
+# ============================================================
+# limit-ip - Menu atur limit IP per user
+# Lokasi: /usr/local/sbin/limit-ip
+# ============================================================
+
+BASE="/usr/local/sbin/xyr"
+source "$BASE/lib/config.sh"
+source "$BASE/lib/common.sh"
+source "$BASE/lib/validate.sh"
+
+require_root
+
+print_header "ATUR LIMIT IP USER"
+
+# ---------- Pilih layanan ----------
+echo "   ${C_YELLOW}[1]${C_RESET}  Vmess"
+echo "   ${C_YELLOW}[2]${C_RESET}  Vless"
+echo "   ${C_YELLOW}[3]${C_RESET}  Trojan"
+echo "   ${C_YELLOW}[4]${C_RESET}  Shadowsocks"
+echo "   ${C_YELLOW}[5]${C_RESET}  SSH"
+echo ""
+read -rp "   Pilih layanan [1-5]: " svc
+
+case "$svc" in
+    1) SERVICE="vmess"; DB_FILE="$DB_VMESS"; PREFIX="$PREFIX_VMESS" ;;
+    2) SERVICE="vless"; DB_FILE="$DB_VLESS"; PREFIX="$PREFIX_VLESS" ;;
+    3) SERVICE="trojan"; DB_FILE="$DB_TROJAN"; PREFIX="$PREFIX_TROJAN" ;;
+    4) SERVICE="ss"; DB_FILE="$DB_SS"; PREFIX="$PREFIX_SS" ;;
+    5) SERVICE="ssh"; DB_FILE="$DB_SSH"; PREFIX="$PREFIX_SSH" ;;
+    *) back_to_menu; exit 0 ;;
+esac
+
+print_line
+print_title "         DAFTAR USER $SERVICE"
+print_line
+printf "%-20s %-12s %s\n" "USERNAME" "LIMIT IP" "STATUS"
+print_line
+
+# ---------- List user ----------
+if [[ "$SERVICE" == "ssh" ]]; then
+    while IFS=: read -r uname _ uid _; do
+        [[ "$uid" -lt 1000 ]] && continue
+        [[ "$uname" == "nobody" ]] && continue
+        cur=$(cat "$LIMITIP_DIR/ssh/$uname" 2>/dev/null || echo "-")
+        printf "%-20s %-12s %s\n" "$uname" "$cur" "aktif"
+    done < /etc/passwd
+else
+    if [[ -f "$DB_FILE" ]]; then
+        awk -v p="$PREFIX" '$1==p {print $2}' "$DB_FILE" | while read -r u; do
+            cur=$(cat "$LIMITIP_DIR/$SERVICE/$u" 2>/dev/null || echo "-")
+            printf "%-20s %-12s %s\n" "$u" "$cur" "aktif"
+        done
+    fi
+fi
+print_line
+echo ""
+
+# ---------- Input user ----------
+read -rp "Username yang ingin diubah: " USER
+[[ -z "$USER" ]] && { print_warn "Dibatalkan"; back_to_menu; exit 0; }
+
+# Validasi user ada
+if [[ "$SERVICE" == "ssh" ]]; then
+    if ! getent passwd "$USER" >/dev/null 2>&1; then
+        print_error "User SSH tidak ditemukan"
+        back_to_menu; exit 1
+    fi
+else
+    if ! grep -qw "$USER" "$XRAY_CONF" 2>/dev/null; then
+        print_error "User $SERVICE tidak ditemukan"
+        back_to_menu; exit 1
+    fi
+fi
+
+# ---------- Input limit ----------
+ask_number NEW_LIMIT "Limit IP baru (0=unlimited)" 0 99 2
+
+# ---------- Simpan ----------
+if [[ "$NEW_LIMIT" -eq 0 ]]; then
+    rm -f "$LIMITIP_DIR/$SERVICE/$USER"
+    print_ok "Limit IP user $USER dihapus (unlimited)"
+else
+    mkdir -p "$LIMITIP_DIR/$SERVICE"
+    echo "$NEW_LIMIT" > "$LIMITIP_DIR/$SERVICE/$USER"
+    print_ok "Limit IP user $USER diubah ke $NEW_LIMIT device"
+fi
+
+# ---------- Update DB ----------
+if [[ "$SERVICE" != "ssh" && -f "$DB_FILE" ]]; then
+    old_line=$(grep -E "^${PREFIX} ${USER} " "$DB_FILE")
+    if [[ -n "$old_line" ]]; then
+        exp=$(echo "$old_line" | awk '{print $3}')
+        uuid=$(echo "$old_line" | awk '{print $4}')
+        quota=$(echo "$old_line" | awk '{print $5}')
+        sed -i "/^${PREFIX} ${USER} /d" "$DB_FILE"
+        echo "${PREFIX} ${USER} ${exp} ${uuid} ${quota} ${NEW_LIMIT}" >> "$DB_FILE"
+    fi
+fi
+
+log_info "Limit IP updated: $SERVICE/$USER -> $NEW_LIMIT"
+back_to_menu
