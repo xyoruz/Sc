@@ -1,0 +1,67 @@
+#!/bin/bash
+# ============================================================
+# delws - Delete Vmess Account
+# Lokasi: /usr/local/sbin/delws
+# ============================================================
+
+BASE="/usr/local/sbin/xyr"
+source "$BASE/lib/config.sh"
+source "$BASE/lib/common.sh"
+source "$BASE/lib/xray-helper.sh"
+
+require_root
+acquire_lock "$LOCKFILE_DEL"
+
+print_header "DELETE VMESS ACCOUNT"
+
+# ---------- List user ----------
+if [[ -f "$DB_VMESS" ]]; then
+    printf "%-20s %s\n" "USERNAME" "EXPIRED"
+    print_line
+    awk -v p="$PREFIX_VMESS" '$1==p {printf "%-20s %s\n", $2, $3}' "$DB_VMESS"
+    print_line
+else
+    print_warn "DB Vmess kosong"
+    release_lock
+    back_to_menu
+    exit 0
+fi
+echo ""
+
+while :; do
+    read -rp "Username yang akan dihapus: " USER
+    [[ -z "$USER" ]] && { print_warn "Dibatalkan"; release_lock; back_to_menu; exit 0; }
+    if ! grep -qw "$USER" "$XRAY_CONF" 2>/dev/null; then
+        print_error "User tidak ditemukan"
+        continue
+    fi
+    break
+done
+
+# ---------- Backup config ----------
+xray_backup_config
+
+# ---------- Hapus dari config ----------
+xray_del_user "$PREFIX_VMESS" "$USER"
+
+# ---------- Validasi ----------
+if ! xray_apply; then
+    print_error "Gagal hapus. Rollback."
+    release_lock
+    back_to_menu
+    exit 1
+fi
+
+# ---------- Bersihkan DB & file ----------
+db_del_user "$DB_VMESS" "$PREFIX_VMESS" "$USER"
+rm -f "${QUOTA_DIR}/vmess/${USER}"
+rm -f "${LIMITIP_DIR}/vmess/${USER}"
+rm -f "${USAGE_DIR}/vmess/${USER}"
+rm -f "${LOCKED_DIR}/vmess/${USER}"
+rm -f "${NGINX_WEB}/vmess-${USER}.txt"
+
+log_info "Vmess deleted: $USER"
+
+print_ok "User $USER berhasil dihapus"
+release_lock
+back_to_menu

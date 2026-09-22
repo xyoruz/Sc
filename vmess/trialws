@@ -1,0 +1,66 @@
+#!/bin/bash
+# ============================================================
+# trialws - Create Trial Vmess (durasi menit)
+# Lokasi: /usr/local/sbin/trialws
+# ============================================================
+
+BASE="/usr/local/sbin/xyr"
+source "$BASE/lib/config.sh"
+source "$BASE/lib/common.sh"
+source "$BASE/lib/validate.sh"
+source "$BASE/lib/xray-helper.sh"
+
+require_root
+
+print_header "TRIAL VMESS ACCOUNT"
+
+domain=$(get_domain)
+[[ -z "$domain" ]] && { print_error "Domain belum di-set"; back_to_menu; exit 1; }
+
+ask_number MINUTES "Durasi trial (menit)" 1 1440 60
+
+USER="trial$(tr -dc 0-9 </dev/urandom | head -c5)"
+uuid=$(cat /proc/sys/kernel/random/uuid)
+exp_date=$(date -d "+1 day" +"%Y-%m-%d")
+
+# ---------- Sisip ----------
+xray_backup_config
+sed -i "/#vmess\$/a\\### ${USER} ${exp_date}\\
+},{\"id\": \"${uuid}\",\"alterId\": 0,\"email\": \"${USER}\"" "$XRAY_CONF"
+sed -i "/#vmessgrpc\$/a\\### ${USER} ${exp_date}\\
+},{\"id\": \"${uuid}\",\"alterId\": 0,\"email\": \"${USER}\"" "$XRAY_CONF"
+
+if ! xray_apply; then
+    print_error "Gagal create trial"
+    back_to_menu
+    exit 1
+fi
+
+# ---------- DB ----------
+db_save_user "$DB_VMESS" "$PREFIX_VMESS" "$USER" "$exp_date" "$uuid" 0 1
+
+# ---------- Auto-delete via at ----------
+if command -v at >/dev/null 2>&1; then
+    echo "/usr/local/sbin/del-auto vmess ${USER}" | at now +"$MINUTES" minutes 2>/dev/null || true
+fi
+
+# ---------- Link ----------
+JSON_TLS="{\"v\":\"2\",\"ps\":\"${USER}\",\"add\":\"${domain}\",\"port\":\"443\",\"id\":\"${uuid}\",\"aid\":\"0\",\"net\":\"ws\",\"path\":\"/vmess\",\"type\":\"none\",\"host\":\"${domain}\",\"tls\":\"tls\"}"
+LINK_TLS="vmess://$(echo "$JSON_TLS" | base64 -w0)"
+
+log_info "Trial Vmess: $USER (${MINUTES}m)"
+
+clear
+print_line
+print_title "        TRIAL VMESS DIBUAT"
+print_line
+echo "Username  : $USER"
+echo "UUID      : $uuid"
+echo "Durasi    : $MINUTES menit"
+print_line
+echo "Link TLS  : $LINK_TLS"
+print_line
+print_warn "Akun dihapus otomatis dalam $MINUTES menit"
+print_line
+
+back_to_menu

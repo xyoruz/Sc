@@ -1,0 +1,35 @@
+#!/bin/bash
+# ============================================================
+# member-ws - List user Vmess
+# Lokasi: /usr/local/sbin/member-ws
+# ============================================================
+
+BASE="/usr/local/sbin/xyr"
+source "$BASE/lib/config.sh"
+source "$BASE/lib/common.sh"
+
+require_root
+
+clear
+print_line
+print_title "          DAFTAR USER VMESS"
+print_line
+printf "%-20s %-15s %-8s %s\n" "USERNAME" "EXPIRED" "IP LIM" "QUOTA"
+print_line
+
+total=0
+if [[ -f "$DB_VMESS" ]]; then
+    while read -r _ user exp uuid quota ipl; do
+        [[ "$user" == "$PREFIX_VMESS" ]] && continue
+        [[ -z "$user" ]] && continue
+        quota_h=$([[ -n "$quota" && "$quota" != "0" ]] && echo "${quota} GB" || echo "unlimited")
+        ipl_h=$([[ -n "$ipl" && "$ipl" != "0" ]] && echo "$ipl" || echo "∞")
+        printf "%-20s %-15s %-8s %s\n" "$user" "$exp" "$ipl_h" "$quota_h"
+        total=$((total + 1))
+    done < "$DB_VMESS"
+fi
+
+print_line
+echo "  Total user Vmess: $total"
+print_line
+back_to_menu

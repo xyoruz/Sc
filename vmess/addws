@@ -1,0 +1,150 @@
+#!/bin/bash
+# ============================================================
+# addws - Create Vmess Account (WS + gRPC)
+# Lokasi: /usr/local/sbin/addws
+# ============================================================
+
+BASE="/usr/local/sbin/xyr"
+source "$BASE/lib/config.sh"
+source "$BASE/lib/common.sh"
+source "$BASE/lib/validate.sh"
+source "$BASE/lib/xray-helper.sh"
+
+require_root
+acquire_lock "$LOCKFILE_ADD"
+
+print_header "CREATE VMESS ACCOUNT"
+
+# ---------- Domain ----------
+domain=$(get_domain)
+[[ -z "$domain" ]] && { print_error "Domain belum di-set"; release_lock; back_to_menu; exit 1; }
+
+IP=$(get_my_ip)
+ISP=$(cat /root/.info/.isp 2>/dev/null || echo "-")
+CITY=$(cat /root/.info/.city 2>/dev/null || echo "-")
+
+# ---------- Input ----------
+while :; do
+    ask_username USER "Username"
+
+    # Cek di DB juga
+    if grep -qw "$USER" "$XRAY_CONF" 2>/dev/null; then
+        print_error "Username '$USER' sudah ada di config Xray"
+        continue
+    fi
+    break
+done
+
+ask_number DAYS "Expired (hari)" 1 3650 30
+ask_number QUOTA_GB "Limit Quota GB (0=unlimited)" 0 9999 0
+ask_number IPLIMIT "Limit IP (0=unlimited)" 0 99 2
+
+# ---------- Data ----------
+uuid=$(cat /proc/sys/kernel/random/uuid)
+exp_date=$(date -d "$DAYS days" +"%Y-%m-%d")
+exp_display=$(date -d "$DAYS days" +"%d %b, %Y")
+created_display=$(date +"%d %b, %Y")
+
+# ---------- Sisip ke config.json ----------
+xray_backup_config
+
+# Vmess WS
+sed -i "/#vmess\$/a\\### ${USER} ${exp_date}\\
+},{\"id\": \"${uuid}\",\"alterId\": 0,\"email\": \"${USER}\"" "$XRAY_CONF"
+# Vmess gRPC
+sed -i "/#vmessgrpc\$/a\\### ${USER} ${exp_date}\\
+},{\"id\": \"${uuid}\",\"alterId\": 0,\"email\": \"${USER}\"" "$XRAY_CONF"
+
+# Validasi
+if ! xray_apply; then
+    print_error "Config Xray corrupt, rollback!"
+    release_lock
+    back_to_menu
+    exit 1
+fi
+
+# ---------- Generate links ----------
+mk_link() {
+    local json="$1"
+    echo "vmess://$(echo "$json" | base64 -w0)"
+}
+
+JSON_TLS=$(cat <<EOF
+{"v":"2","ps":"${USER}","add":"${domain}","port":"443","id":"${uuid}","aid":"0","net":"ws","path":"/vmess","type":"none","host":"${domain}","tls":"tls"}
+EOF
+)
+JSON_NTLS=$(cat <<EOF
+{"v":"2","ps":"${USER}","add":"${domain}","port":"80","id":"${uuid}","aid":"0","net":"ws","path":"/vmess","type":"none","host":"${domain}","tls":"none"}
+EOF
+)
+JSON_GRPC=$(cat <<EOF
+{"v":"2","ps":"${USER}","add":"${domain}","port":"443","id":"${uuid}","aid":"0","net":"grpc","path":"vmess-grpc","type":"none","host":"${domain}","tls":"tls"}
+EOF
+)
+
+LINK_TLS=$(mk_link "$JSON_TLS")
+LINK_NTLS=$(mk_link "$JSON_NTLS")
+LINK_GRPC=$(mk_link "$JSON_GRPC")
+
+# ---------- Simpan DB ----------
+db_save_user "$DB_VMESS" "$PREFIX_VMESS" "$USER" "$exp_date" "$uuid" "$QUOTA_GB" "$IPLIMIT"
+
+# ---------- Limit IP & Quota ----------
+[[ "$IPLIMIT" -gt 0 ]] && echo "$IPLIMIT" > "$LIMITIP_DIR/vmess/$USER"
+[[ "$QUOTA_GB" -gt 0 ]] && echo "$((QUOTA_GB * 1024 * 1024 * 1024))" > "$QUOTA_DIR/vmess/$USER"
+
+# ---------- File web ----------
+cat > "${NGINX_WEB}/vmess-${USER}.txt" <<-END
+=================================
+Format Vmess Account
+=================================
+Username         : $USER
+Host             : $domain
+Port TLS         : 443
+Port NTLS        : 80, 8080, 8880, 2082
+UUID             : $uuid
+AlterId          : 0
+Security         : auto
+Network          : ws / grpc
+Path             : /vmess
+ServiceName      : vmess-grpc
+=================================
+Link TLS   : $LINK_TLS
+Link NTLS  : $LINK_NTLS
+Link gRPC  : $LINK_GRPC
+=================================
+Limit IP       : $IPLIMIT
+Limit Quota    : $QUOTA_GB GB
+Aktif Selama   : $DAYS Hari
+Berakhir Pada  : $exp_display
+=================================
+END
+chmod 644 "${NGINX_WEB}/vmess-${USER}.txt"
+
+# ---------- Log ----------
+log_info "Vmess created: $USER | exp: $exp_date"
+
+# ---------- Output ----------
+clear
+print_line
+print_title "        VMESS ACCOUNT BERHASIL DIBUAT"
+print_line
+echo "Username    : $USER"
+echo "Domain      : $domain"
+echo "UUID        : $uuid"
+echo "Limit IP    : $IPLIMIT"
+echo "Limit Quota : $QUOTA_GB GB"
+print_line
+echo "Link TLS    : $LINK_TLS"
+print_line
+echo "Link NTLS   : $LINK_NTLS"
+print_line
+echo "Link gRPC   : $LINK_GRPC"
+print_line
+echo "OpenClash   : http://$domain:81/vmess-${USER}.txt"
+print_line
+echo "Aktif       : $DAYS Hari | Berakhir: $exp_display"
+print_line
+
+release_lock
+back_to_menu
