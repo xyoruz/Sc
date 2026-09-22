@@ -1,0 +1,162 @@
+#!/bin/bash
+# ============================================================
+# install-udp - Install BadVPN UDP Custom
+# Lokasi: /usr/local/sbin/install-udp
+# ============================================================
+
+BASE="/usr/local/sbin/xyr"
+source "$BASE/lib/config.sh"
+source "$BASE/lib/common.sh"
+
+require_root
+
+print_header "INSTALL UDP CUSTOM (BADVPN)"
+
+# ---------- Deteksi virtualisasi ----------
+VIRT=$(systemd-detect-virt 2>/dev/null || echo "unknown")
+if [[ "$VIRT" == "openvz" ]]; then
+    print_error "OpenVZ tidak mendukung UDP Custom"
+    print_warn "Butuh TUN/TAP device yang tidak tersedia di OpenVZ"
+    back_to_menu
+    exit 1
+fi
+
+# ---------- Cek TUN device ----------
+if [[ ! -e /dev/net/tun ]]; then
+    print_warn "TUN device tidak ada. Coba buat..."
+    mkdir -p /dev/net
+    mknod /dev/net/tun c 10 200 2>/dev/null
+    chmod 666 /dev/net/tun
+    if [[ ! -e /dev/net/tun ]]; then
+        print_error "Gagal buat TUN. VPS mungkin OpenVZ/LXC."
+        back_to_menu
+        exit 1
+    fi
+fi
+print_ok "TUN device tersedia"
+
+# ---------- Install dependency ----------
+print_info "Install paket dependency..."
+apt-get update -y >/dev/null 2>&1
+apt-get install -y cmake g++ make screen git wget curl >/dev/null 2>&1
+print_ok "Dependency OK"
+
+# ---------- Cek BadVPN sudah ada ----------
+if [[ -x /usr/local/bin/badvpn-udpgw ]]; then
+    print_warn "BadVPN sudah terinstall"
+    read -rp "Reinstall? (y/N): " ans
+    [[ "${ans,,}" != "y" ]] && { back_to_menu; exit 0; }
+fi
+
+# ---------- Download BadVPN ----------
+print_info "Download BadVPN source..."
+cd /tmp
+rm -rf badvpn 2>/dev/null
+git clone https://github.com/ambrop72/badvpn.git >/dev/null 2>&1
+
+if [[ ! -d /tmp/badvpn ]]; then
+    print_error "Gagal download. Cek koneksi internet."
+    back_to_menu
+    exit 1
+fi
+
+cd /tmp/badvpn
+mkdir build && cd build
+
+# ---------- Compile ----------
+print_info "Compile (butuh 2-5 menit)..."
+cmake .. -DBUILD_NOTHING_BY_DEFAULT=1 -DBUILD_UDPGW=1 >/dev/null 2>&1
+
+if ! make -j$(nproc) >/dev/null 2>&1; then
+    print_error "Compile gagal. Cek log di /tmp/badvpn/build"
+    back_to_menu
+    exit 1
+fi
+
+# ---------- Install binary ----------
+make install >/dev/null 2>&1
+cp -f udpgw/badvpn-udpgw /usr/local/bin/ 2>/dev/null
+chmod +x /usr/local/bin/badvpn-udpgw
+
+# ---------- Buat systemd service ----------
+cat > /etc/systemd/system/badvpn-udpgw.service <<'EOF'
+[Unit]
+Description=BadVPN UDP Gateway
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/badvpn-udpgw --listen-addr 127.0.0.1:7300 --max-clients 500 --max-connections-for-client 10
+Restart=always
+RestartSec=3
+LimitNOFILE=1048576
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# ---------- Service kedua: port 7200 ----------
+cat > /etc/systemd/system/badvpn-udpgw2.service <<'EOF'
+[Unit]
+Description=BadVPN UDP Gateway 2
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/badvpn-udpgw --listen-addr 127.0.0.1:7200 --max-clients 500 --max-connections-for-client 10
+Restart=always
+RestartSec=3
+LimitNOFILE=1048576
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# ---------- Service ketiga: port 7100 ----------
+cat > /etc/systemd/system/badvpn-udpgw3.service <<'EOF'
+[Unit]
+Description=BadVPN UDP Gateway 3
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/badvpn-udpgw --listen-addr 127.0.0.1:7100 --max-clients 500 --max-connections-for-client 10
+Restart=always
+RestartSec=3
+LimitNOFILE=1048576
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# ---------- Enable & start ----------
+systemctl daemon-reload
+systemctl enable --now badvpn-udpgw badvpn-udpgw2 badvpn-udpgw3 >/dev/null 2>&1
+
+sleep 2
+
+# ---------- Cek status ----------
+if systemctl is-active --quiet badvpn-udpgw; then
+    print_ok "BadVPN UDP aktif di port 7100, 7200, 7300"
+else
+    print_error "BadVPN gagal start. Cek: journalctl -u badvpn-udpgw"
+fi
+
+# ---------- Info ----------
+clear
+print_line
+print_title "        UDP CUSTOM TERINSTALL"
+print_line
+echo "  Port UDP   : 7100, 7200, 7300"
+echo "  Listen     : 127.0.0.1 (via Nginx / HAProxy)"
+echo "  Service    :"
+echo "    - badvpn-udpgw  (7300)"
+echo "    - badvpn-udpgw2 (7200)"
+echo "    - badvpn-udpgw3 (7100)"
+print_line
+print_info "Untuk forwarding ke publik, tambahkan port di HAProxy/Nginx"
+print_line
+
+log_info "BadVPN UDP installed (7100, 7200, 7300)"
+
+back_to_menu
