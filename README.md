@@ -52,7 +52,7 @@ Autoscript Xray untuk **Debian & Ubuntu** dengan fitur Vmess, Vless, Trojan, Sha
 
 ```bash
 apt update -y && apt upgrade -y && \
-wget -q https://raw.githubusercontent.com/<user>/<repo>/main/prem.sh && \
+wget -q https://raw.githubusercontent.com/xyoruz/sc/main/prem.sh && \
 chmod +x prem.sh && ./prem.sh
 ```
 
