@@ -2,6 +2,7 @@
 # ============================================================
 # addhost - Setting domain + SSL acme.sh
 # Lokasi: /usr/local/sbin/addhost
+# Metode: standalone (port 80), cadangan Cloudflare DNS
 # ============================================================
 
 BASE="/usr/local/sbin/xyr"
@@ -12,6 +13,29 @@ source "$BASE/lib/validate.sh"
 require_root
 
 print_header "SETTING DOMAIN + SSL"
+
+ACME="/root/.acme.sh/acme.sh"
+STOPPED=()
+
+# Selalu nyalakan lagi service yang dihentikan, apa pun hasilnya
+start_stopped() {
+    local s
+    for s in "${STOPPED[@]}"; do systemctl start "$s" 2>/dev/null; done
+    STOPPED=()
+}
+trap start_stopped EXIT
+
+open_port_80() {
+    if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q "Status: active"; then
+        ufw allow 80/tcp >/dev/null 2>&1
+        ufw allow 443/tcp >/dev/null 2>&1
+    fi
+    # Taruh ACCEPT di urutan paling atas supaya menang atas aturan REJECT/DROP
+    for port in 80 443; do
+        iptables -C INPUT -p tcp --dport "$port" -j ACCEPT 2>/dev/null || \
+            iptables -I INPUT 1 -p tcp --dport "$port" -j ACCEPT 2>/dev/null
+    done
+}
 
 # ---------- Info ----------
 print_warn "Sebelum lanjut, pastikan domain sudah di-pointing ke IP VPS ini."
@@ -38,27 +62,84 @@ print_ok "Domain disimpan: $NEW_DOMAIN"
 if [[ "$do_ssl" == "y" ]]; then
     print_step "Pasang SSL Let's Encrypt"
 
+    # Dependensi
+    if ! command -v socat >/dev/null 2>&1; then
+        print_info "Memasang socat..."
+        apt-get install -y socat >/dev/null 2>&1
+    fi
+
+    # Cek pointing domain
+    DOM_IP=$(getent ahostsv4 "$NEW_DOMAIN" 2>/dev/null | awk '{print $1; exit}')
+    echo "  IP domain : ${DOM_IP:-tidak ditemukan}"
+    if [[ "$DOM_IP" != "$IP" ]]; then
+        print_warn "Domain belum mengarah ke IP VPS ini (atau proxy Cloudflare masih aktif)."
+        read -rp "Tetap lanjut? (y/N): " go_on
+        if [[ "${go_on,,}" != "y" ]]; then
+            print_error "Dibatalkan. Perbaiki DNS dulu (A record -> $IP, DNS only)."
+            back_to_menu
+            exit 1
+        fi
+    fi
+
     # Install acme.sh kalau belum
-    if [[ ! -f /root/.acme.sh/acme.sh ]]; then
+    if [[ ! -f "$ACME" ]]; then
         curl -sSL https://get.acme.sh | sh -s email=admin@"$NEW_DOMAIN" >/dev/null 2>&1 || \
         { print_error "Gagal install acme.sh"; back_to_menu; exit 1; }
     fi
+    "$ACME" --set-default-ca --server letsencrypt >/dev/null 2>&1
 
-    # Stop service yang pakai port 80
-    systemctl stop nginx 2>/dev/null
-    systemctl stop haproxy 2>/dev/null
+    issued=0
 
-    # Issue
-    /root/.acme.sh/acme.sh --set-default-ca --server letsencrypt >/dev/null 2>&1
-    if /root/.acme.sh/acme.sh --issue -d "$NEW_DOMAIN" --standalone -k ec-256; then
-        /root/.acme.sh/acme.sh --installcert -d "$NEW_DOMAIN" \
+    # ----- Metode 1: standalone (port 80) -----
+    print_step "Metode 1: standalone (port 80)"
+    open_port_80
+    for svc in nginx haproxy apache2; do
+        if is_service_active "$svc"; then
+            systemctl stop "$svc" 2>/dev/null && STOPPED+=("$svc")
+        fi
+    done
+    sleep 2
+
+    if ss -tln 2>/dev/null | grep -qE ':80\s'; then
+        print_error "Port 80 masih dipakai proses lain:"
+        ss -tlnp 2>/dev/null | grep -E ':80\s'
+    else
+        # pre/post-hook disimpan acme.sh, jadi perpanjangan otomatis (cron)
+        # juga menghentikan nginx sementara dan menyalakannya lagi.
+        if "$ACME" --issue -d "$NEW_DOMAIN" --standalone --httpport 80 -k ec-256 --force \
+            --pre-hook  "systemctl stop nginx haproxy 2>/dev/null; true" \
+            --post-hook "systemctl start nginx haproxy 2>/dev/null; true"; then
+            issued=1
+        fi
+    fi
+    start_stopped
+
+    # ----- Metode 2: Cloudflare DNS (tanpa port 80) -----
+    if [[ $issued -ne 1 ]]; then
+        print_warn "Standalone gagal. Kemungkinan port 80 diblokir firewall provider."
+        echo "  Metode 2 (Cloudflare DNS) tidak butuh port 80."
+        echo "  Syarat: domain aktif di Cloudflare, token izin Zone:Read + DNS:Edit."
+        read -rp "Cloudflare API Token (ENTER untuk lewati): " CF_Token
+        if [[ -n "$CF_Token" ]]; then
+            export CF_Token
+            if "$ACME" --issue -d "$NEW_DOMAIN" --dns dns_cf -k ec-256 --force; then
+                issued=1
+            fi
+        fi
+    fi
+
+    # ----- Install sertifikat -----
+    if [[ $issued -eq 1 ]]; then
+        "$ACME" --installcert -d "$NEW_DOMAIN" --ecc \
             --fullchainpath /etc/xray/xray.crt \
-            --keypath /etc/xray/xray.key --ecc
+            --keypath /etc/xray/xray.key \
+            --reloadcmd "systemctl restart nginx haproxy xray 2>/dev/null; true"
         chmod 644 /etc/xray/xray.crt
         chmod 600 /etc/xray/xray.key
         print_ok "SSL berhasil dipasang"
     else
-        print_error "SSL gagal. Cek pointing domain."
+        print_error "SSL gagal. Cek pointing domain dan firewall (TCP 80)."
+        print_warn "Let's Encrypt membatasi 5 percobaan gagal per jam per domain."
     fi
 
     # Start ulang
