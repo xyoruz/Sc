@@ -25,6 +25,7 @@ readonly C_WHITE='\033[1;37m'
 readonly C_GRAY='\033[1;30m'
 
 # ---------- Print ----------
+print_step()    { echo -e "${C_CYAN}[STEP]${C_RESET} $*"; }
 print_info()    { echo -e "${C_CYAN}[INFO]${C_RESET} $*"; }
 print_ok()      { echo -e "${C_GREEN}[ OK ]${C_RESET} $*"; }
 print_warn()    { echo -e "${C_YELLOW}[WARN]${C_RESET} $*"; }
